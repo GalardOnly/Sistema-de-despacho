@@ -1,0 +1,59 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais e dependências locais
+.venv/
+venv/
+env/
+ENV/
+
+# Configurações locais e segredos
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+
+# Bancos e arquivos gerados em runtime
+*.db
+*.sqlite
+*.sqlite3
+instance/*
+!instance/.gitkeep
+database/*.db
+database/*.sqlite
+database/*.sqlite3
+database/backups/*
+!database/backups/.gitkeep
+
+# Logs e relatórios locais
+logs/*
+!logs/.gitkeep
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Documentação interna de trabalho
+docs/superpowers/
+
+# Arquivos compactados/exports locais
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# IDE/editor e sistema operacional
+.agents/
+.codex/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

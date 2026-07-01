@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solicitante · Sistema de Despacho de Coletas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
+    --primary:#16803a;--primary-dark:#0f5d2a;--green-bg:#e6f6ec;--green-ink:#177a41;
+    --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,sans-serif;background:var(--bg);color:var(--ink)}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  header{background:linear-gradient(135deg,var(--primary),#25a85a);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:18px}.sub{font-size:12px;color:rgba(255,255,255,.78);margin-top:3px}.logo-space{font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:rgba(255,255,255,.78);margin-right:auto;margin-left:16px}
+  header a{color:#fff;text-decoration:none;background:rgba(255,255,255,.12);border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:700}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 28px 70px}
+  .grid2{display:grid;grid-template-columns:1.05fr .95fr;gap:18px}@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 8px 22px rgba(15,93,42,.04)}
+  .card h2{font-size:15px;margin-bottom:14px}
+  .field{margin-bottom:12px}.field label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:6px}.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13.5px Inter;color:var(--ink)}
+  .choice-row{display:flex;gap:7px;margin-bottom:16px}.choice-row button{flex:1;border:1px solid var(--border);background:#fff;color:var(--muted);font-weight:800;font-size:11px;padding:10px 7px;border-radius:9px;cursor:pointer}
+  .choice-row button.on{border-color:var(--primary);box-shadow:0 0 0 2px rgba(22,128,58,.12)}.choice-row button.on.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#b7cdf6}.choice-row button.on.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#efd198}.choice-row button.on.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#efb6b1}.choice-row button.on.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#b6dfc5}
+  .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:9px;padding:12px;font-weight:800;font-size:14px;cursor:pointer}.primary:hover{background:var(--primary-dark)}
+  .rowlist{display:flex;flex-direction:column;gap:9px}.item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:13px}.item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.proto{font-weight:800;font-size:13px}.route{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4}
+  .tag,.status{font-size:9.8px;font-weight:800;letter-spacing:.25px;padding:4px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;margin-right:4px}.tag.tipo{background:var(--slate-bg);color:var(--slate-ink)}.tag.vehicle{background:var(--green-bg);color:var(--green-ink)}.tag.rotina{background:var(--blue-bg);color:var(--blue-ink)}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink)}.tag.emergencia{background:var(--red-bg);color:var(--red-ink)}
+  .status.solicitado{background:var(--slate-bg);color:var(--slate-ink)}.status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink)}.status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink)}.status.entregue{background:var(--green-bg);color:var(--green-ink)}.status.cancelado{background:var(--red-bg);color:var(--red-ink)}
+  .public-times,.meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5}.public-times strong,.meta strong{color:var(--ink)}
+  .chip-cancel{border:1px solid #efb6b1;color:var(--red-ink);background:#fff;font-size:11px;font-weight:800;padding:6px 10px;border-radius:8px;cursor:pointer;margin-top:10px}
+  .map{height:250px;border-radius:10px;border:1px solid var(--border);margin-top:11px;z-index:1}.map-meta{font-size:10.5px;color:var(--muted);margin-top:6px}.empty{text-align:center;color:var(--muted-2);font-size:12px;padding:22px;border:1px dashed var(--border);border-radius:10px}
+  .chat-box{height:265px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}.msg{background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px}.msg.admin{border-left:4px solid var(--primary)}.msg .who{font-size:10px;font-weight:800;color:var(--muted);margin-bottom:4px}.msg p{font-size:12.5px;line-height:1.4}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Sistema de Despacho de Coletas</h1><div class="sub">Solicitante · {{ unidade }}</div></div>
+  <div class="logo-space">Área da logo</div>
+  <a href="/despacho/logout">Sair</a>
+</header>
+
+<div class="wrap">
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <h2>Nova coleta</h2>
+        <div class="field"><label>Destino</label><select id="selDestino"></select></div>
+        <div class="field"><label>Tipo de exame</label><select id="selTipo"></select></div>
+        <label class="field-label" style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Veículo necessário</label>
+        <div class="choice-row" id="veiculoRow">
+          <button class="on vehicle" data-vehicle="moto">Moto</button>
+          <button data-vehicle="carro">Carro</button>
+        </div>
+        <label style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Nível de urgência</label>
+        <div class="choice-row" id="urgRow"></div>
+        <button class="primary" id="btnSolicitar">Solicitar coleta</button>
+      </div>
+
+      <div class="card">
+        <h2>Pedidos de {{ unidade }}</h2>
+        <div class="rowlist" id="lista"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Chat interno</h2>
+      <div class="chat-box" id="chatMensagens"></div>
+      <div class="field" style="margin-top:12px"><label>Mensagem para o admin</label><textarea id="chatTexto" rows="3" placeholder="Digite sua mensagem..."></textarea></div>
+      <button class="primary" id="btnEnviarChat">Enviar mensagem</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"><span id="toastTxt"></span></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const TIPOS = ["Sangue","Urina","Gasometria","Microbiologia/Cultura","Anatomia patológica","Outro"];
+const URGENCIAS = [{id:"rotina",label:"ROTINA (12 horas)"},{id:"urgente",label:"URGENTE (40 min)"},{id:"emergencia",label:"EMERGÊNCIA (15 min)"}];
+const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];
+let urgenciaSelecionada = "rotina";
+let veiculoSelecionado = "moto";
+const minhaUnidade = "{{ unidade }}";
+const mapas = new Map();
+let toastTimer;
+
+function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+const fmtHora = ts => ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
+function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
+function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'ENTREGADOR ACIONADO',em_rota_retirada:'ENTREGADOR A CAMINHO',em_rota:'ENTREGADOR A CAMINHO',despachado:'EXAME RETIRADO / EM ENTREGA',coletado:'EXAME RETIRADO',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
+function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#16803a';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+async function api(url,opt){const r=await fetch(url,opt);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
+
+function setupForm(){
+  $('selTipo').innerHTML = TIPOS.map(t=>`<option value="${t}">${t}</option>`).join('');
+  $('urgRow').innerHTML = URGENCIAS.map(u=>`<button class="${u.id===urgenciaSelecionada?'on '+u.id:''}" data-urg="${u.id}">${u.label}</button>`).join('');
+}
+$('urgRow').addEventListener('click', e=>{const u=e.target.dataset.urg;if(!u)return;urgenciaSelecionada=u;setupForm();});
+$('veiculoRow').addEventListener('click', e=>{
+  const v=e.target.dataset.vehicle;if(!v)return;veiculoSelecionado=v;
+  document.querySelectorAll('#veiculoRow button').forEach(b=>b.classList.toggle('on',b.dataset.vehicle===v));
+});
+
+async function carregarDestinos(){
+  const unidades = await api('/despacho/api/unidades');
+  $('selDestino').innerHTML = unidades.filter(u=>u.nome!==minhaUnidade).map(u=>`<option value="${u.id}">${escapeHtml(u.nome)}</option>`).join('');
+}
+
+$('btnSolicitar').addEventListener('click', async () => {
+  const body = {destino_id:parseInt($('selDestino').value),tipo:$('selTipo').value,urgencia:urgenciaSelecionada,tipo_veiculo:veiculoSelecionado};
+  try{await api('/despacho/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});toast('Pedido solicitado');renderLista();}
+  catch(e){toast(e.message,'danger');}
+});
+
+async function renderLista(){
+  const pedidos = await api('/despacho/api/pedidos');
+  const list = $('lista');
+  mapas.forEach(m=>m.remove()); mapas.clear();
+  if(!pedidos.length){list.innerHTML='<div class="empty">Nenhum pedido ainda.</div>';return;}
+  list.innerHTML = pedidos.map(p=>`
+    <div class="item">
+      <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
+      <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)}</div>
+      <div><span class="tag tipo">${escapeHtml(p.tipo)}</span><span class="tag ${p.urgencia}">${escapeHtml(p.urgencia_label)}</span><span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
+      <div class="public-times"><span><strong>Solicitado às</strong> ${fmtHora(p.ts.solicitado)}</span><span><strong>Entregue às</strong> ${fmtHora(p.ts.entregue)}</span><span>${slaLinha(p)}</span></div>
+      ${STATUS_MAPA.includes(p.status)?`<div class="map" id="map-${p.id}"></div><div class="map-meta" id="map-meta-${p.id}">Aguardando localização...</div>`:''}
+      ${p.status==='solicitado' && p.origem===minhaUnidade?`<button class="chip-cancel" data-cancel="${p.id}">Cancelar pedido</button>`:''}
+    </div>`).join('');
+  await Promise.all(pedidos.filter(p=>STATUS_MAPA.includes(p.status)).map(atualizarMapa));
+}
+
+async function atualizarMapa(p){
+  const el=$('map-'+p.id); if(!el) return;
+  const pontos=await api(`/despacho/api/pedidos/${p.id}/localizacoes`);
+  const mapa=L.map(el).setView([-22.2,-49.9],12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(mapa);
+  mapas.set(p.id,mapa);
+  if(!pontos.length){$('map-meta-'+p.id).textContent='Entregador em rota; aguardando primeira posição.';return;}
+  const coords=pontos.map(x=>[x.latitude,x.longitude]);
+  L.polyline(coords,{color:'#16803a',weight:4}).addTo(mapa); L.marker(coords[coords.length-1]).addTo(mapa);
+  mapa.fitBounds(coords.length>1?coords:L.latLngBounds(coords[0],coords[0]).pad(.08));
+  $('map-meta-'+p.id).textContent=`Última posição: ${fmtHora(pontos[pontos.length-1].ts)}`;
+  setTimeout(()=>mapa.invalidateSize(),0);
+}
+
+document.addEventListener('click', async e=>{
+  const id=e.target.dataset.cancel;if(!id)return;
+  try{await api(`/despacho/api/pedidos/${id}/cancelar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});toast('Pedido cancelado');renderLista();}
+  catch(err){toast(err.message,'danger');}
+});
+
+async function carregarChat(){
+  const msgs=await api('/despacho/api/chat');
+  $('chatMensagens').innerHTML = msgs.map(m=>`<div class="msg ${m.remetente_papel==='admin'?'admin':''}"><div class="who">${escapeHtml(m.remetente_nome)} · ${fmtHora(m.ts)}</div><p>${escapeHtml(m.texto)}</p></div>`).join('') || '<div class="empty">Sem mensagens ainda.</div>';
+  $('chatMensagens').scrollTop=$('chatMensagens').scrollHeight;
+}
+$('btnEnviarChat').onclick=async()=>{const texto=$('chatTexto').value.trim();if(!texto)return;try{await api('/despacho/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto})});$('chatTexto').value='';await carregarChat();}catch(e){toast(e.message,'danger');}};
+
+async function init(){setupForm();await carregarDestinos();await renderLista();await carregarChat();}
+init();
+setInterval(renderLista,15000);
+setInterval(carregarChat,6000);
+</script>
+</body>
+</html>
