@@ -30,7 +30,7 @@
   .choice-row button.on{border-color:var(--primary);box-shadow:0 0 0 2px rgba(22,128,58,.12)}.choice-row button.on.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#b7cdf6}.choice-row button.on.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#efd198}.choice-row button.on.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#efb6b1}.choice-row button.on.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#b6dfc5}
   .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:9px;padding:12px;font-weight:800;font-size:14px;cursor:pointer}.primary:hover{background:var(--primary-dark)}
   .secondary{width:100%;border:1px solid var(--border);background:#fff;color:var(--primary);border-radius:9px;padding:10px 11px;font-weight:800;font-size:12px;cursor:pointer}.secondary:hover{border-color:var(--primary);background:var(--green-bg)}.link-button{border:none;background:transparent;color:var(--primary);font-weight:800;cursor:pointer}
-  .rowlist{display:flex;flex-direction:column;gap:9px}.item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:13px}.item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.proto{font-weight:800;font-size:13px}.route{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4}
+  .rowlist{display:flex;flex-direction:column;gap:9px}.pedidos-scroll{max-height:620px;overflow-y:auto;padding-right:4px}.item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:13px}.item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.proto{font-weight:800;font-size:13px}.route{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4}
   .tag,.status{font-size:9.8px;font-weight:800;letter-spacing:.25px;padding:4px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;margin-right:4px}.tag.tipo{background:var(--slate-bg);color:var(--slate-ink)}.tag.vehicle{background:var(--green-bg);color:var(--green-ink)}.tag.rotina{background:var(--blue-bg);color:var(--blue-ink)}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink)}.tag.emergencia{background:var(--red-bg);color:var(--red-ink)}
   .status.solicitado{background:var(--slate-bg);color:var(--slate-ink)}.status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink)}.status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink)}.status.entregue{background:var(--green-bg);color:var(--green-ink)}.status.cancelado{background:var(--red-bg);color:var(--red-ink)}
   .public-times,.meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5}.public-times strong,.meta strong{color:var(--ink)}
@@ -79,7 +79,7 @@
 
       <div class="card">
         <h2>Pedidos de {{ unidade }}</h2>
-        <div class="rowlist" id="lista"></div>
+        <div class="rowlist pedidos-scroll" id="lista"></div>
       </div>
     </div>
 
@@ -112,7 +112,7 @@ function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
 function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'ENTREGADOR ACIONADO',em_rota_retirada:'ENTREGADOR A CAMINHO',em_rota:'ENTREGADOR A CAMINHO',despachado:'EXAME RETIRADO / EM ENTREGA',coletado:'EXAME RETIRADO',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
 function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
 function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
-async function api(url,opt){const r=await fetch(url,opt);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
+async function api(url,opt){const r=await fetch(url,window.despachoFetchOptions(opt));const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
 
 function setupForm(){
   $('urgRow').innerHTML = URGENCIAS.map(u=>`<button class="${u.id===urgenciaSelecionada?'on '+u.id:''}" data-urg="${u.id}">${u.label}</button>`).join('');

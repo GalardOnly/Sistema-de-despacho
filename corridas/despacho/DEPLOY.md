@@ -27,6 +27,14 @@ pip install -r requirements.txt
 
 Se estiver usando virtualenv, ative o ambiente antes do comando.
 
+Gere uma chave segura para o Flask:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Guarde esse valor para usar no `APP_SECRET`.
+
 ## 3. Configurar o app web
 
 Na aba Web do PythonAnywhere:
@@ -45,13 +53,15 @@ project_home = "/home/GalardOnly/Sistema-de-despacho"
 if project_home not in sys.path:
     sys.path.insert(0, project_home)
 
-os.environ["APP_SECRET"] = "troque-por-uma-chave-segura"
-os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = "troque-a-senha-inicial"
+os.environ["APP_SECRET"] = "cole_aqui_a_chave_gerada_com_secrets"
+os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = "defina_uma_senha_forte_para_o_admin"
 
 from corridas.app import app as application
 ```
 
 Depois clique em Reload.
+
+Não use os textos de exemplo literalmente. A aplicação não inicia sem `APP_SECRET`, e o primeiro administrador não é criado sem `DESPACHO_ADMIN_SENHA_INICIAL`.
 
 ## 4. Primeiro acesso
 
@@ -64,7 +74,7 @@ https://galardonly.pythonanywhere.com/despacho/login
 Usuário inicial:
 
 - usuário: `admin`
-- senha: `mudar123`, ou o valor definido em `DESPACHO_ADMIN_SENHA_INICIAL`
+- senha: valor definido em `DESPACHO_ADMIN_SENHA_INICIAL`
 
 A senha inicial só é usada quando o banco ainda não tem nenhum usuário cadastrado.
 

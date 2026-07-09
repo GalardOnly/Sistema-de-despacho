@@ -2,6 +2,7 @@
 
 import calendar
 import hashlib
+import hmac
 import math
 import os
 import secrets
@@ -42,8 +43,38 @@ STATUS_ATIVOS_ENTREGADOR = (
 )
 STATUS_RASTREAMENTO = ("em_rota_retirada", "em_rota", "despachado", "coletado")
 STATUS_EM_ANDAMENTO = STATUS_ATIVOS_ENTREGADOR
+CSRF_SESSION_KEY = "desp_csrf_token"
+CSRF_HEADER = "X-CSRF-Token"
+METODOS_COM_MUTACAO = {"POST", "PUT", "PATCH", "DELETE"}
 
-ADMIN_SENHA_INICIAL = os.environ.get("DESPACHO_ADMIN_SENHA_INICIAL", "mudar123")
+SENHAS_ADMIN_INSEGURAS = {
+    "mudar123",
+    "admin",
+    "admin123",
+    "senha",
+    "password",
+    "troque-a-senha-inicial",
+}
+
+
+def parece_senha_admin_insegura(valor):
+    texto = valor.casefold()
+    return texto in SENHAS_ADMIN_INSEGURAS or any(
+        termo in texto for termo in ("troque", "change", "cole_aqui", "defina_", "placeholder")
+    )
+
+
+def senha_admin_inicial_configurada():
+    senha = (os.environ.get("DESPACHO_ADMIN_SENHA_INICIAL") or "").strip()
+    if not senha:
+        raise RuntimeError(
+            "Defina DESPACHO_ADMIN_SENHA_INICIAL antes de criar o primeiro administrador."
+        )
+    if len(senha) < 8 or parece_senha_admin_insegura(senha):
+        raise RuntimeError(
+            "DESPACHO_ADMIN_SENHA_INICIAL precisa ter pelo menos 8 caracteres e não pode ser padrão."
+        )
+    return senha
 
 despacho_bp = Blueprint(
     "despacho",
@@ -250,9 +281,14 @@ def init_db_desp():
 
     existe = con.execute("SELECT COUNT(*) AS n FROM usuarios").fetchone()[0]
     if existe == 0:
+        try:
+            senha_admin = senha_admin_inicial_configurada()
+        except RuntimeError:
+            con.close()
+            raise
         con.execute(
             "INSERT INTO usuarios(nome,username,senha_hash,papel,unidade_id) VALUES(?,?,?,?,?)",
-            ("Administrador", "admin", generate_password_hash(ADMIN_SENHA_INICIAL), "admin", None),
+            ("Administrador", "admin", generate_password_hash(senha_admin), "admin", None),
         )
 
     con.execute(
@@ -760,6 +796,35 @@ def login_required_desp(*papeis_permitidos):
     return decorator
 
 
+def csrf_token():
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+@despacho_bp.context_processor
+def contexto_csrf():
+    return {"csrf_token": csrf_token}
+
+
+@despacho_bp.before_request
+def proteger_api_contra_csrf():
+    if request.method not in METODOS_COM_MUTACAO:
+        return None
+    if not request.path.startswith("/despacho/api/"):
+        return None
+    if not session.get("desp_uid"):
+        return None
+
+    esperado = session.get(CSRF_SESSION_KEY)
+    recebido = request.headers.get(CSRF_HEADER)
+    if not esperado or not recebido or not hmac.compare_digest(esperado, recebido):
+        return jsonify(error="token CSRF inválido"), 403
+    return None
+
+
 @despacho_bp.route("/login", methods=["GET", "POST"])
 def desp_login():
     erro = None
@@ -775,13 +840,14 @@ def desp_login():
             session["desp_nome"] = u["nome"]
             session["desp_papel"] = u["papel"]
             session["desp_unidade_id"] = u["unidade_id"]
+            session[CSRF_SESSION_KEY] = secrets.token_urlsafe(32)
             return redirect(url_for("despacho.desp_home"))
     return render_template("despacho/login.html", erro=erro)
 
 
 @despacho_bp.route("/logout")
 def desp_logout():
-    for k in ("desp_uid", "desp_nome", "desp_papel", "desp_unidade_id"):
+    for k in ("desp_uid", "desp_nome", "desp_papel", "desp_unidade_id", CSRF_SESSION_KEY):
         session.pop(k, None)
     return redirect(url_for("despacho.desp_login"))
 
@@ -1179,7 +1245,7 @@ def api_pedidos():
     elif papel == "solicitante":
         uid = session["desp_unidade_id"]
         rows = con.execute(
-            "SELECT * FROM pedidos WHERE origem_id=? OR destino_id=? ORDER BY id DESC", (uid, uid)
+            "SELECT * FROM pedidos WHERE origem_id=? ORDER BY id DESC", (uid,)
         ).fetchall()
     else:
         placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
@@ -1341,7 +1407,7 @@ def api_localizacoes(pid):
         autorizado = r["entregador_id"] == uid
     elif papel == "solicitante":
         unidade_id = session.get("desp_unidade_id")
-        autorizado = unidade_id in (r["origem_id"], r["destino_id"])
+        autorizado = unidade_id == r["origem_id"]
     if not autorizado:
         return jsonify(error="sem permissão para consultar esta rota"), 403
     rows = con.execute(
@@ -1413,6 +1479,8 @@ def api_relatorio_inconformidades():
         LEFT JOIN usuarios ent ON ent.id = p.entregador_id
         LEFT JOIN usuarios sol ON sol.id = p.criado_por
         WHERE p.ts_solicitado BETWEEN ? AND ?
+          AND p.status='entregue'
+          AND p.ts_entregue IS NOT NULL
         ORDER BY p.ts_solicitado DESC
         """,
         (inicio, fim),

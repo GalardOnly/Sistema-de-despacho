@@ -44,6 +44,14 @@ As pastas `database`, `instance`, `logs`, `scripts` e `static` ficam preparadas 
 
 ```bash
 pip install -r requirements.txt
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Copie o valor gerado e configure as variáveis antes de iniciar:
+
+```powershell
+$env:APP_SECRET = "cole_aqui_a_chave_gerada"
+$env:DESPACHO_ADMIN_SENHA_INICIAL = "defina_uma_senha_forte_para_o_admin"
 python corridas/app.py
 ```
 
@@ -56,9 +64,9 @@ http://localhost:5000/despacho/login
 Usuário inicial:
 
 - usuário: `admin`
-- senha: `mudar123`
+- senha: valor definido em `DESPACHO_ADMIN_SENHA_INICIAL`
 
-Para produção, defina variáveis de ambiente como `APP_SECRET` e, se quiser trocar a senha inicial antes da criação do banco, `DESPACHO_ADMIN_SENHA_INICIAL`.
+O sistema não cria mais administrador com senha padrão. `APP_SECRET` deve ter pelo menos 32 caracteres, e `DESPACHO_ADMIN_SENHA_INICIAL` precisa ser definida antes da primeira criação do banco.
 
 ## PythonAnywhere
 

@@ -42,6 +42,18 @@
 </div>
 
 <script>
+window.DESPACHO_CSRF_TOKEN = '{{ csrf_token() }}';
+window.despachoFetchOptions = function(options) {
+  const finalOptions = Object.assign({}, options || {});
+  const method = String(finalOptions.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+    const headers = new Headers(finalOptions.headers || {});
+    headers.set('X-CSRF-Token', window.DESPACHO_CSRF_TOKEN || '');
+    finalOptions.headers = headers;
+  }
+  return finalOptions;
+};
+
 (() => {
   const notifEls = {
     button: document.getElementById('notifButton'),
@@ -75,7 +87,7 @@
   };
 
   async function notifApi(path, options) {
-    const resp = await fetch(path, options);
+    const resp = await fetch(path, window.despachoFetchOptions(options));
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.error || 'Falha ao carregar notificações');
     return data;

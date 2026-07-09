@@ -1,4 +1,5 @@
 import sqlite3
+import os
 import sys
 import tempfile
 import time
@@ -52,10 +53,16 @@ class MigrationTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self.tempdir.name) / "despacho.db")
         self.original_db_path = despacho.DESP_DB_PATH
+        self.original_admin_password = os.environ.get("DESPACHO_ADMIN_SENHA_INICIAL")
         despacho.DESP_DB_PATH = self.db_path
+        os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = "senha-admin-testes-123"
 
     def tearDown(self):
         despacho.DESP_DB_PATH = self.original_db_path
+        if self.original_admin_password is None:
+            os.environ.pop("DESPACHO_ADMIN_SENHA_INICIAL", None)
+        else:
+            os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = self.original_admin_password
         self.tempdir.cleanup()
 
     def test_migrates_legacy_database_without_losing_assigned_order(self):
@@ -114,13 +121,32 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("unidade_id", chat_columns)
         self.assertEqual(("aguardando_entregador", 2000, 2000), order)
 
+    def test_initial_admin_password_must_be_configured_for_empty_database(self):
+        os.environ.pop("DESPACHO_ADMIN_SENHA_INICIAL", None)
+        Path(self.db_path).unlink(missing_ok=True)
+
+        with self.assertRaisesRegex(RuntimeError, "DESPACHO_ADMIN_SENHA_INICIAL"):
+            despacho.init_db_desp()
+
+    def test_initial_admin_password_rejects_known_default(self):
+        valores = ("mudar123", "defina_uma_senha_forte_para_o_admin")
+        for senha in valores:
+            with self.subTest(senha=senha):
+                os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = senha
+                Path(self.db_path).unlink(missing_ok=True)
+
+                with self.assertRaisesRegex(RuntimeError, "DESPACHO_ADMIN_SENHA_INICIAL"):
+                    despacho.init_db_desp()
+
 
 class DispatchApiTests(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self.tempdir.name) / "despacho.db")
         self.original_db_path = despacho.DESP_DB_PATH
+        self.original_admin_password = os.environ.get("DESPACHO_ADMIN_SENHA_INICIAL")
         despacho.DESP_DB_PATH = self.db_path
+        os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = "senha-admin-testes-123"
         despacho.init_db_desp()
 
         con = sqlite3.connect(self.db_path)
@@ -146,6 +172,21 @@ class DispatchApiTests(unittest.TestCase):
         )
         self.solicitante_mesma_unidade_id = con.execute(
             "SELECT id FROM usuarios WHERE username='solicitante2'"
+        ).fetchone()[0]
+        con.execute(
+            "INSERT INTO usuarios(nome,username,senha_hash,papel,unidade_id,codigo_ref) "
+            "VALUES(?,?,?,?,?,?)",
+            (
+                "Solicitante Destino",
+                "solicitante_destino",
+                "x",
+                "solicitante",
+                self.destino_id,
+                "SOL-DEST",
+            ),
+        )
+        self.solicitante_destino_id = con.execute(
+            "SELECT id FROM usuarios WHERE username='solicitante_destino'"
         ).fetchone()[0]
         con.execute(
             "INSERT INTO usuarios(nome,username,senha_hash,papel,codigo_ref,tipo_veiculo) "
@@ -186,9 +227,25 @@ class DispatchApiTests(unittest.TestCase):
         self.app.config.update(TESTING=True, SECRET_KEY="test-secret")
         self.app.register_blueprint(despacho.despacho_bp)
         self.client = self.app.test_client()
+        self.raw_open = self.client.open
+
+        def open_with_csrf(*args, **kwargs):
+            method = (kwargs.get("method") or (args[1] if len(args) > 1 else "GET")).upper()
+            path = args[0] if args else kwargs.get("path", "")
+            if method in {"POST", "PUT", "PATCH", "DELETE"} and str(path).startswith("/despacho/api/"):
+                headers = dict(kwargs.pop("headers", {}) or {})
+                headers.setdefault("X-CSRF-Token", "csrf-test-token")
+                kwargs["headers"] = headers
+            return self.raw_open(*args, **kwargs)
+
+        self.client.open = open_with_csrf
 
     def tearDown(self):
         despacho.DESP_DB_PATH = self.original_db_path
+        if self.original_admin_password is None:
+            os.environ.pop("DESPACHO_ADMIN_SENHA_INICIAL", None)
+        else:
+            os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = self.original_admin_password
         self.tempdir.cleanup()
 
     def login(self, papel):
@@ -199,6 +256,11 @@ class DispatchApiTests(unittest.TestCase):
                 self.solicitante_mesma_unidade_id,
                 self.origem_id,
                 "Solicitante 2",
+            ),
+            "solicitante_destino": (
+                self.solicitante_destino_id,
+                self.destino_id,
+                "Solicitante Destino",
             ),
             "entregador": (self.entregador_id, None, "Entregador"),
             "outro_entregador": (self.outro_entregador_id, None, "Outro Entregador"),
@@ -217,6 +279,7 @@ class DispatchApiTests(unittest.TestCase):
                 "solicitante" if "solicitante" in papel else papel
             )
             sess["desp_unidade_id"] = unidade_id
+            sess["desp_csrf_token"] = "csrf-test-token"
 
     def create_order(self, urgencia="rotina", tipo_veiculo="moto", operador_nome="Maria Operadora"):
         self.login("solicitante")
@@ -313,6 +376,20 @@ class DispatchApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(400, duplicate_ref.status_code)
+
+    def test_mutating_api_requires_csrf_token(self):
+        self.login("admin")
+
+        blocked = self.raw_open(
+            "/despacho/api/unidades",
+            method="POST",
+            json={"nome": "Unidade sem token"},
+        )
+        self.assertEqual(403, blocked.status_code)
+        self.assertIn("CSRF", blocked.get_json()["error"])
+
+        allowed = self.client.post("/despacho/api/unidades", json={"nome": "Unidade com token"})
+        self.assertEqual(200, allowed.status_code, allowed.get_json())
 
     def test_order_requires_vehicle_and_uses_collection_serial(self):
         self.login("solicitante")
@@ -575,6 +652,11 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual(
             200, self.client.get(f"/despacho/api/pedidos/{pedido['id']}/localizacoes").status_code
         )
+        self.login("solicitante_destino")
+        self.assertEqual([], self.client.get("/despacho/api/pedidos").get_json())
+        self.assertEqual(
+            403, self.client.get(f"/despacho/api/pedidos/{pedido['id']}/localizacoes").status_code
+        )
         self.login("outro_solicitante")
         self.assertEqual(
             403, self.client.get(f"/despacho/api/pedidos/{pedido['id']}/localizacoes").status_code
@@ -619,6 +701,11 @@ class DispatchApiTests(unittest.TestCase):
         con.commit()
         con.close()
 
+        self.login("admin")
+        relatorio_em_aberto = self.client.get("/despacho/api/relatorios/inconformidades").get_json()
+        self.assertEqual([], relatorio_em_aberto)
+
+        self.login("entregador")
         without_reason = self.client.post(f"/despacho/api/pedidos/{pedido['id']}/entrega")
         self.assertEqual(400, without_reason.status_code)
 
@@ -894,6 +981,9 @@ class DispatchApiTests(unittest.TestCase):
             "notifPanel",
             "/api/notificacoes",
             "Notification",
+            "DESPACHO_CSRF_TOKEN",
+            "despachoFetchOptions",
+            "X-CSRF-Token",
             "normalizarVeiculo",
             "/api/chat/resumo",
             "mensagens recebidas",
@@ -936,9 +1026,15 @@ class DispatchApiTests(unittest.TestCase):
             "notifPanel",
             "/api/notificacoes",
             "Notification",
+            "DESPACHO_CSRF_TOKEN",
+            "despachoFetchOptions",
+            "X-CSRF-Token",
             "localizacoes",
             "leaflet",
             "15000",
+            "pedidos-scroll",
+            "max-height:620px",
+            "overflow-y:auto",
         ):
             self.assertIn(expected, html)
         self.assertNotIn('id="selOperador"', html)
@@ -967,6 +1063,9 @@ class DispatchApiTests(unittest.TestCase):
             "notifPanel",
             "/api/notificacoes",
             "Notification",
+            "DESPACHO_CSRF_TOKEN",
+            "despachoFetchOptions",
+            "X-CSRF-Token",
         ):
             self.assertIn(expected, html)
         self.assertNotIn("<label>justificativa_atraso</label>", html)
