@@ -76,6 +76,7 @@ class MigrationTests(unittest.TestCase):
         con = sqlite3.connect(self.db_path)
         user_columns = {row[1] for row in con.execute("PRAGMA table_info(usuarios)")}
         order_columns = {row[1] for row in con.execute("PRAGMA table_info(pedidos)")}
+        chat_columns = {row[1] for row in con.execute("PRAGMA table_info(chat_mensagens)")}
         tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         order = None
         if "ts_aceito_admin" in order_columns:
@@ -106,6 +107,11 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("localizacoes_pedido", tables)
         self.assertIn("chat_mensagens", tables)
         self.assertIn("indisponibilidades_entregador", tables)
+        self.assertIn("operadores_solicitante", tables)
+        self.assertIn("tipos_coleta_unidade", tables)
+        self.assertIn("notificacoes", tables)
+        self.assertIn("operador_id", order_columns)
+        self.assertIn("unidade_id", chat_columns)
         self.assertEqual(("aguardando_entregador", 2000, 2000), order)
 
 
@@ -132,6 +138,14 @@ class DispatchApiTests(unittest.TestCase):
         )
         self.solicitante_id = con.execute(
             "SELECT id FROM usuarios WHERE username='solicitante'"
+        ).fetchone()[0]
+        con.execute(
+            "INSERT INTO usuarios(nome,username,senha_hash,papel,unidade_id,codigo_ref) "
+            "VALUES(?,?,?,?,?,?)",
+            ("Solicitante 2", "solicitante2", "x", "solicitante", self.origem_id, "SOL-003"),
+        )
+        self.solicitante_mesma_unidade_id = con.execute(
+            "SELECT id FROM usuarios WHERE username='solicitante2'"
         ).fetchone()[0]
         con.execute(
             "INSERT INTO usuarios(nome,username,senha_hash,papel,codigo_ref,tipo_veiculo) "
@@ -181,6 +195,11 @@ class DispatchApiTests(unittest.TestCase):
         data = {
             "admin": (self.admin_id, None, "Administrador"),
             "solicitante": (self.solicitante_id, self.origem_id, "Solicitante"),
+            "solicitante_mesma_unidade": (
+                self.solicitante_mesma_unidade_id,
+                self.origem_id,
+                "Solicitante 2",
+            ),
             "entregador": (self.entregador_id, None, "Entregador"),
             "outro_entregador": (self.outro_entregador_id, None, "Outro Entregador"),
             "outro_solicitante": (
@@ -199,7 +218,7 @@ class DispatchApiTests(unittest.TestCase):
             )
             sess["desp_unidade_id"] = unidade_id
 
-    def create_order(self, urgencia="rotina", tipo_veiculo="moto"):
+    def create_order(self, urgencia="rotina", tipo_veiculo="moto", operador_nome="Maria Operadora"):
         self.login("solicitante")
         response = self.client.post(
             "/despacho/api/pedidos",
@@ -208,6 +227,7 @@ class DispatchApiTests(unittest.TestCase):
                 "tipo": "Sangue",
                 "urgencia": urgencia,
                 "tipo_veiculo": tipo_veiculo,
+                "operador_nome": operador_nome,
             },
         )
         self.assertEqual(200, response.status_code, response.get_json())
@@ -298,7 +318,12 @@ class DispatchApiTests(unittest.TestCase):
         self.login("solicitante")
         missing_vehicle = self.client.post(
             "/despacho/api/pedidos",
-            json={"destino_id": self.destino_id, "tipo": "Sangue", "urgencia": "rotina"},
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Sangue",
+                "urgencia": "rotina",
+                "operador_nome": "Operador Veículo",
+            },
         )
         self.assertEqual(400, missing_vehicle.status_code)
 
@@ -306,6 +331,108 @@ class DispatchApiTests(unittest.TestCase):
         self.assertRegex(pedido["protocolo"], r"^COL-\d{5}$")
         self.assertEqual("moto", pedido["tipo_veiculo"])
         self.assertEqual(720, pedido["sla_limite_min"])
+
+    def test_operator_name_is_required_and_internal_code_stays_hidden(self):
+        self.login("solicitante")
+        sem_operador = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Sangue",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+            },
+        )
+        self.assertEqual(400, sem_operador.status_code)
+
+        pedido = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Sangue",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+                "operador_nome": "João da Recepção",
+            },
+        )
+        self.assertEqual(200, pedido.status_code, pedido.get_json())
+        self.assertEqual("João da Recepção", pedido.get_json()["operador_nome"])
+        self.assertNotIn("operador_codigo", pedido.get_json())
+
+        con = sqlite3.connect(self.db_path)
+        row = con.execute(
+            "SELECT nome, codigo FROM operadores_solicitante WHERE unidade_id=?",
+            (self.origem_id,),
+        ).fetchone()
+        con.close()
+        self.assertEqual("João da Recepção", row[0])
+        self.assertRegex(row[1], r"^[a-f0-9]{64}$")
+
+        self.login("outro_solicitante")
+        outra_unidade = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Sangue",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+                "operador_nome": "João da Recepção",
+            },
+        )
+        self.assertEqual(200, outra_unidade.status_code, outra_unidade.get_json())
+
+    def test_custom_collection_type_is_saved_only_for_requester_unit(self):
+        self.login("solicitante")
+        tipos_iniciais = self.client.get("/despacho/api/tipos-exame")
+        self.assertEqual(200, tipos_iniciais.status_code, tipos_iniciais.get_json())
+        self.assertIn("Outro", tipos_iniciais.get_json())
+        self.assertNotIn("Swab nasal", tipos_iniciais.get_json())
+
+        pedido = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Outro",
+                "tipo_outro": "Swab nasal",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+                "operador_nome": "Ana Técnica",
+            },
+        )
+        self.assertEqual(200, pedido.status_code, pedido.get_json())
+        self.assertEqual("Swab nasal", pedido.get_json()["tipo"])
+
+        tipos_origem = self.client.get("/despacho/api/tipos-exame")
+        self.assertIn("Swab nasal", tipos_origem.get_json())
+
+        pedido_reutilizando_tipo = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Swab nasal",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+                "operador_nome": "Ana Técnica",
+            },
+        )
+        self.assertEqual(200, pedido_reutilizando_tipo.status_code, pedido_reutilizando_tipo.get_json())
+
+        self.login("outro_solicitante")
+        tipos_outra_unidade = self.client.get("/despacho/api/tipos-exame")
+        self.assertEqual(200, tipos_outra_unidade.status_code, tipos_outra_unidade.get_json())
+        self.assertNotIn("Swab nasal", tipos_outra_unidade.get_json())
+
+        bloqueado = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Swab nasal",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+                "operador_nome": "Bruno Técnico",
+            },
+        )
+        self.assertEqual(400, bloqueado.status_code)
 
     def test_records_complete_flow_and_restores_driver_availability(self):
         pedido = self.create_order()
@@ -381,6 +508,31 @@ class DispatchApiTests(unittest.TestCase):
         )
         self.assertEqual(200, response.status_code, response.get_json())
         self.assertEqual("Outro Entregador", response.get_json()["entregador"])
+
+    def test_dispatch_accepts_legacy_vehicle_values_with_spaces_or_case(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            "UPDATE usuarios SET tipo_veiculo=? WHERE id=?",
+            (" Moto ", self.entregador_id),
+        )
+        con.commit()
+        con.close()
+
+        pedido = self.create_order(tipo_veiculo="moto")
+        response = self.dispatch_order(pedido["id"])
+        self.assertEqual(200, response.status_code, response.get_json())
+        self.assertEqual("Entregador", response.get_json()["entregador"])
+
+    def test_dispatch_defaults_legacy_driver_without_vehicle_to_motorcycle(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute("UPDATE usuarios SET tipo_veiculo=NULL WHERE id=?", (self.entregador_id,))
+        con.commit()
+        con.close()
+
+        pedido = self.create_order(tipo_veiculo="moto")
+        response = self.dispatch_order(pedido["id"])
+        self.assertEqual(200, response.status_code, response.get_json())
+        self.assertEqual("Entregador", response.get_json()["entregador"])
 
     def test_cancel_records_timestamp(self):
         pedido = self.create_order()
@@ -497,24 +649,101 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual(1, resumo["em_andamento"])
         self.assertEqual(0, resumo["fora_sla"])
 
-    def test_internal_chat_between_requester_and_admin(self):
+    def test_notifications_follow_dispatch_flow_by_role(self):
+        pedido = self.create_order()
+
+        self.login("admin")
+        admin_feed = self.client.get("/despacho/api/notificacoes")
+        self.assertEqual(200, admin_feed.status_code, admin_feed.get_json())
+        self.assertEqual(1, admin_feed.get_json()["nao_lidas"])
+        self.assertIn(
+            "Novo pedido para retirada",
+            [n["titulo"] for n in admin_feed.get_json()["notificacoes"]],
+        )
+
+        response = self.dispatch_order(pedido["id"])
+        self.assertEqual(200, response.status_code, response.get_json())
+
+        self.login("entregador")
+        driver_feed = self.client.get("/despacho/api/notificacoes").get_json()
+        self.assertEqual(1, driver_feed["nao_lidas"])
+        self.assertIn("Novo pedido atribuído", [n["titulo"] for n in driver_feed["notificacoes"]])
+
+        marked = self.client.post(
+            f"/despacho/api/notificacoes/{driver_feed['notificacoes'][0]['id']}/lida"
+        )
+        self.assertEqual(200, marked.status_code, marked.get_json())
+        self.assertEqual(0, self.client.get("/despacho/api/notificacoes").get_json()["nao_lidas"])
+
+        accepted = self.client.post(f"/despacho/api/pedidos/{pedido['id']}/aceitar")
+        self.assertEqual(200, accepted.status_code, accepted.get_json())
+
+        self.login("solicitante")
+        requester_feed = self.client.get("/despacho/api/notificacoes").get_json()
+        titulos_solicitante = [n["titulo"] for n in requester_feed["notificacoes"]]
+        self.assertIn("Pedido aceito pelo admin", titulos_solicitante)
+        self.assertIn("Entregador a caminho", titulos_solicitante)
+
+        self.login("outro_solicitante")
+        self.assertEqual(0, self.client.get("/despacho/api/notificacoes").get_json()["nao_lidas"])
+
+        self.login("entregador")
+        retirada = self.client.post(f"/despacho/api/pedidos/{pedido['id']}/retirada")
+        self.assertEqual(200, retirada.status_code, retirada.get_json())
+
+        self.login("admin")
+        admin_titles = [n["titulo"] for n in self.client.get("/despacho/api/notificacoes").get_json()["notificacoes"]]
+        self.assertIn("Exame retirado", admin_titles)
+
+        self.login("solicitante")
+        requester_titles = [n["titulo"] for n in self.client.get("/despacho/api/notificacoes").get_json()["notificacoes"]]
+        self.assertIn("Exame retirado", requester_titles)
+
+    def test_read_notifications_are_removed_from_feed(self):
+        self.create_order()
+
+        self.login("admin")
+        feed = self.client.get("/despacho/api/notificacoes").get_json()
+        self.assertEqual(1, feed["nao_lidas"])
+        self.assertEqual(1, len(feed["notificacoes"]))
+
+        marked = self.client.post(f"/despacho/api/notificacoes/{feed['notificacoes'][0]['id']}/lida")
+        self.assertEqual(200, marked.status_code, marked.get_json())
+
+        after = self.client.get("/despacho/api/notificacoes").get_json()
+        self.assertEqual(0, after["nao_lidas"])
+        self.assertEqual([], after["notificacoes"])
+
+    def test_internal_chat_is_isolated_by_unit_and_shared_by_same_unit_logins(self):
         self.login("solicitante")
         sent = self.client.post("/despacho/api/chat", json={"texto": "Preciso de apoio na coleta"})
         self.assertEqual(200, sent.status_code, sent.get_json())
+        self.assertEqual(self.origem_id, sent.get_json()["unidade_id"])
         requester_thread = self.client.get("/despacho/api/chat").get_json()
         self.assertEqual(["Preciso de apoio na coleta"], [msg["texto"] for msg in requester_thread])
 
+        self.login("solicitante_mesma_unidade")
+        same_unit_thread = self.client.get("/despacho/api/chat").get_json()
+        self.assertEqual(["Preciso de apoio na coleta"], [msg["texto"] for msg in same_unit_thread])
+
+        self.login("outro_solicitante")
+        other_unit_thread = self.client.get("/despacho/api/chat").get_json()
+        self.assertEqual([], other_unit_thread)
+
         self.login("admin")
-        admin_messages = self.client.get(
-            f"/despacho/api/chat?solicitante_id={self.solicitante_id}"
-        ).get_json()
+        admin_messages = self.client.get(f"/despacho/api/chat?unidade_id={self.origem_id}").get_json()
         self.assertEqual("Solicitante", admin_messages[0]["remetente_nome"])
+        self.assertEqual("Origem", admin_messages[0]["unidade"])
+
+        all_admin_messages = self.client.get("/despacho/api/chat").get_json()
+        self.assertEqual(["Preciso de apoio na coleta"], [msg["texto"] for msg in all_admin_messages])
 
         reply = self.client.post(
             "/despacho/api/chat",
-            json={"solicitante_id": self.solicitante_id, "texto": "Admin acompanhando."},
+            json={"unidade_id": self.origem_id, "texto": "Admin acompanhando."},
         )
         self.assertEqual(200, reply.status_code, reply.get_json())
+        self.assertEqual(self.origem_id, reply.get_json()["unidade_id"])
 
         self.login("solicitante")
         requester_thread = self.client.get("/despacho/api/chat").get_json()
@@ -522,6 +751,126 @@ class DispatchApiTests(unittest.TestCase):
             ["Preciso de apoio na coleta", "Admin acompanhando."],
             [msg["texto"] for msg in requester_thread],
         )
+
+        self.login("outro_solicitante")
+        other_unit_thread = self.client.get("/despacho/api/chat").get_json()
+        self.assertEqual([], other_unit_thread)
+
+    def test_admin_chat_summary_groups_received_messages_by_unit(self):
+        self.login("solicitante")
+        first = self.client.post("/despacho/api/chat", json={"texto": "Primeira mensagem"})
+        self.assertEqual(200, first.status_code, first.get_json())
+        second = self.client.post("/despacho/api/chat", json={"texto": "Segunda mensagem"})
+        self.assertEqual(200, second.status_code, second.get_json())
+
+        self.login("admin")
+        reply = self.client.post(
+            "/despacho/api/chat",
+            json={"unidade_id": self.origem_id, "texto": "Resposta do admin"},
+        )
+        self.assertEqual(200, reply.status_code, reply.get_json())
+
+        self.login("outro_solicitante")
+        other = self.client.post("/despacho/api/chat", json={"texto": "Mensagem de outra unidade"})
+        self.assertEqual(200, other.status_code, other.get_json())
+
+        self.login("admin")
+        resumo = self.client.get("/despacho/api/chat/resumo")
+        self.assertEqual(200, resumo.status_code, resumo.get_json())
+        por_unidade = {row["unidade_id"]: row for row in resumo.get_json()}
+        self.assertEqual(2, por_unidade[self.origem_id]["recebidas"])
+        self.assertEqual(3, por_unidade[self.origem_id]["total"])
+        self.assertEqual(1, por_unidade[self.outra_unidade_id]["recebidas"])
+        self.assertEqual(1, por_unidade[self.outra_unidade_id]["total"])
+
+    def test_chat_messages_create_notifications_for_the_other_side(self):
+        self.login("solicitante")
+        sent = self.client.post("/despacho/api/chat", json={"texto": "Pode verificar essa coleta?"})
+        self.assertEqual(200, sent.status_code, sent.get_json())
+
+        self.login("admin")
+        admin_feed = self.client.get("/despacho/api/notificacoes")
+        self.assertEqual(200, admin_feed.status_code, admin_feed.get_json())
+        self.assertEqual(1, admin_feed.get_json()["nao_lidas"])
+        self.assertEqual("Nova mensagem no chat", admin_feed.get_json()["notificacoes"][0]["titulo"])
+        self.assertIn("Origem", admin_feed.get_json()["notificacoes"][0]["mensagem"])
+
+        reply = self.client.post(
+            "/despacho/api/chat",
+            json={"unidade_id": self.origem_id, "texto": "Vou acompanhar por aqui."},
+        )
+        self.assertEqual(200, reply.status_code, reply.get_json())
+
+        self.login("solicitante")
+        requester_feed = self.client.get("/despacho/api/notificacoes").get_json()
+        self.assertEqual(1, requester_feed["nao_lidas"])
+        self.assertEqual("Mensagem do administrador", requester_feed["notificacoes"][0]["titulo"])
+
+        self.login("outro_solicitante")
+        self.assertEqual(0, self.client.get("/despacho/api/notificacoes").get_json()["nao_lidas"])
+
+    def test_admin_lists_logins_and_resets_any_password(self):
+        self.login("admin")
+        logins = self.client.get("/despacho/api/logins")
+        self.assertEqual(200, logins.status_code, logins.get_json())
+        usernames = {row["username"] for row in logins.get_json()}
+        self.assertTrue({"admin", "solicitante", "entregador"}.issubset(usernames))
+
+        empty = self.client.post(
+            f"/despacho/api/usuarios/{self.solicitante_id}/senha",
+            json={"senha": ""},
+        )
+        self.assertEqual(400, empty.status_code)
+
+        changed = self.client.post(
+            f"/despacho/api/usuarios/{self.solicitante_id}/senha",
+            json={"senha": "nova1234"},
+        )
+        self.assertEqual(200, changed.status_code, changed.get_json())
+
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        logged = self.client.post(
+            "/despacho/login",
+            data={"username": "solicitante", "senha": "nova1234"},
+        )
+        self.assertEqual(302, logged.status_code)
+        with self.client.session_transaction() as sess:
+            self.assertEqual(self.solicitante_id, sess["desp_uid"])
+
+        self.login("admin")
+        changed_admin = self.client.post(
+            f"/despacho/api/usuarios/{self.admin_id}/senha",
+            json={"senha": "adminnova"},
+        )
+        self.assertEqual(200, changed_admin.status_code, changed_admin.get_json())
+
+    def test_admin_updates_and_removes_driver(self):
+        self.login("admin")
+        changed = self.client.patch(
+            f"/despacho/api/usuarios/{self.entregador_id}",
+            json={"tipo_veiculo": "carro"},
+        )
+        self.assertEqual(200, changed.status_code, changed.get_json())
+        self.assertEqual("carro", changed.get_json()["tipo_veiculo"])
+
+        users = self.client.get("/despacho/api/usuarios").get_json()
+        driver = next(row for row in users if row["id"] == self.entregador_id)
+        self.assertEqual("carro", driver["tipo_veiculo"])
+
+        pedido = self.create_order(tipo_veiculo="carro")
+        response = self.dispatch_order(pedido["id"])
+        self.assertEqual(200, response.status_code, response.get_json())
+        self.assertEqual("Entregador", response.get_json()["entregador"])
+
+        self.login("admin")
+        busy_delete = self.client.delete(f"/despacho/api/usuarios/{self.entregador_id}")
+        self.assertEqual(400, busy_delete.status_code)
+
+        removed = self.client.delete(f"/despacho/api/usuarios/{self.outro_entregador_id}")
+        self.assertEqual(200, removed.status_code, removed.get_json())
+        users = self.client.get("/despacho/api/usuarios").get_json()
+        self.assertNotIn(self.outro_entregador_id, [row["id"] for row in users])
 
     def test_admin_page_contains_complete_history_and_live_route(self):
         self.login("admin")
@@ -536,6 +885,26 @@ class DispatchApiTests(unittest.TestCase):
             "Cadastro de Entregadores",
             "Relatórios",
             "Chat interno",
+            "chatUnidade",
+            "Barra de mensagens",
+            "unidade_id",
+            "?unidade_id=",
+            "notifButton",
+            "notifBadge",
+            "notifPanel",
+            "/api/notificacoes",
+            "Notification",
+            "normalizarVeiculo",
+            "/api/chat/resumo",
+            "mensagens recebidas",
+            "Alterar senhas",
+            "btnResetSenha",
+            "/api/logins",
+            "Solicitado por",
+            "driverVehicle-",
+            "data-driver-save",
+            "data-driver-delete",
+            "/api/usuarios/",
             "Disponíveis agora",
             "leaflet",
             "15000",
@@ -552,11 +921,31 @@ class DispatchApiTests(unittest.TestCase):
             "Carro",
             "ROTINA (12 horas)",
             "Chat interno",
+            "brand-logo",
+            "/static/img/unimed.png",
+            "--primary:#009962",
+            "Nome de quem está solicitando",
+            "operadorNome",
+            "operador_nome",
+            "tipoOutroBox",
+            "tipoOutro",
+            "tipo_outro",
+            "/api/tipos-exame",
+            "notifButton",
+            "notifBadge",
+            "notifPanel",
+            "/api/notificacoes",
+            "Notification",
             "localizacoes",
             "leaflet",
             "15000",
         ):
             self.assertIn(expected, html)
+        self.assertNotIn('id="selOperador"', html)
+        self.assertNotIn("operatorGate", html)
+        self.assertNotIn("btnLoginOperador", html)
+        self.assertNotIn("Código gerado", html)
+        self.assertNotIn("/api/operadores/login", html)
         self.assertNotIn("Aceito pelo admin", html)
 
     def test_driver_page_contains_availability_acceptance_and_geolocation(self):
@@ -569,9 +958,18 @@ class DispatchApiTests(unittest.TestCase):
             "15000",
             "Justificativa",
             "clt_desconto",
-            "justificativa_atraso",
+            "Justificativa de atraso",
+            "rascunhosJustificativa",
+            "salvarRascunhosJustificativa",
+            "data-justificativa-atraso",
+            "notifButton",
+            "notifBadge",
+            "notifPanel",
+            "/api/notificacoes",
+            "Notification",
         ):
             self.assertIn(expected, html)
+        self.assertNotIn("<label>justificativa_atraso</label>", html)
 
 
 if __name__ == "__main__":

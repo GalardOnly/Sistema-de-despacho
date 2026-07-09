@@ -9,12 +9,12 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
-    --primary:#16803a;--primary-dark:#0f5d2a;--green-bg:#e6f6ec;--green-ink:#177a41;
+    --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
     --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Inter,sans-serif;background:var(--bg);color:var(--ink)}
   .mono{font-family:'IBM Plex Mono',monospace}
-  header{background:linear-gradient(135deg,var(--primary),#25a85a);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+  header{background:var(--primary);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
   header h1{font-size:18px} header .sub{font-size:12px;color:rgba(255,255,255,.78);margin-top:3px}
   header a{color:#fff;text-decoration:none;background:rgba(255,255,255,.12);border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:700}
   .wrap{max-width:1360px;margin:0 auto;padding:24px 28px 70px}
@@ -47,13 +47,17 @@
   .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.stat{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:12px}.stat b{display:block;font-size:20px}.stat span{font-size:11px;color:var(--muted)}
   @media(max-width:820px){.stats{grid-template-columns:1fr 1fr}}
   .chat-box{height:360px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}.msg{background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px}.msg.admin{border-left:4px solid var(--primary)}.msg .who{font-size:10px;font-weight:800;color:var(--muted);margin-bottom:4px}.msg p{font-size:12.5px;line-height:1.4}
+  .mini-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.mini-actions select{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font:12px Inter;color:var(--ink)}.mini-actions button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:800;cursor:pointer}.mini-actions button:hover{border-color:var(--primary);color:var(--primary)}.mini-actions button.danger{border-color:#efb6b1;color:var(--red-ink)}.mini-actions button.danger:hover{background:var(--red-bg)}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
 <header>
   <div><h1>Sistema de Despacho de Coletas</h1><div class="sub">Administrador · {{ nome }}</div></div>
-  <a href="/despacho/logout">Sair</a>
+  <div class="notification-actions">
+    {% include "despacho/_notificacoes.html" %}
+    <a href="/despacho/logout">Sair</a>
+  </div>
 </header>
 
 <div class="wrap">
@@ -64,6 +68,7 @@
     <button data-tab="cad-unidades">Cadastro de Unidades</button>
     <button data-tab="cad-usuarios">Cadastro de Usuários</button>
     <button data-tab="cad-entregadores">Cadastro de Entregadores</button>
+    <button data-tab="senhas">Alterar senhas</button>
   </div>
 
   <section class="pane on" id="pane-fila">
@@ -91,13 +96,13 @@
   <section class="pane" id="pane-chat">
     <div class="grid2">
       <div class="card">
-        <h2>Conversas com solicitantes</h2>
-        <div class="field"><label>Solicitante</label><select id="chatSolicitante"></select></div>
+        <h2>Conversas por unidade</h2>
+        <div class="field"><label>Unidade</label><select id="chatUnidade"></select></div>
         <div class="chat-box" id="chatMensagens"></div>
         <div class="field" style="margin-top:12px"><label>Resposta do admin</label><textarea id="chatTexto" rows="3" placeholder="Digite a resposta..."></textarea></div>
         <button class="primary" id="btnEnviarChat">Enviar mensagem</button>
       </div>
-      <div class="card"><h2>Últimas mensagens</h2><div class="rowlist" id="chatResumo"></div></div>
+      <div class="card"><h2>Barra de mensagens</h2><div class="rowlist" id="chatResumo"></div></div>
     </div>
   </section>
 
@@ -134,7 +139,22 @@
         <div class="field"><label>Tipo de veículo</label><select id="novoEntregadorVeiculo"><option value="moto">Moto</option><option value="carro">Carro</option></select></div>
         <button class="primary" id="btnAddEntregador">Cadastrar entregador</button>
       </div>
-      <div class="card"><h2>Entregadores cadastrados</h2><table><thead><tr><th>Nome</th><th>Login</th><th>Código</th><th>Veículo</th><th>Situação</th></tr></thead><tbody id="tabEntregadores"></tbody></table></div>
+      <div class="card"><h2>Entregadores cadastrados</h2><table><thead><tr><th>Nome</th><th>Login</th><th>Código</th><th>Veículo</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="tabEntregadores"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="pane" id="pane-senhas">
+    <div class="grid2">
+      <div class="card">
+        <h2>Alterar senhas</h2>
+        <div class="field"><label>Login</label><select id="resetUsuario"></select></div>
+        <div class="field"><label>Nova senha</label><input id="resetSenha" type="text" autocomplete="off" placeholder="Informe uma senha provisória"></div>
+        <button class="primary" id="btnResetSenha">Atualizar senha</button>
+      </div>
+      <div class="card">
+        <h2>Logins ativos</h2>
+        <table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Referência</th></tr></thead><tbody id="tabLogins"></tbody></table>
+      </div>
     </div>
   </section>
 </div>
@@ -143,20 +163,24 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-let unidades = [], usuarios = [], pedidosAtuais = [];
+let unidades = [], usuarios = [], logins = [], pedidosAtuais = [];
 let mapas = new Map(), toastTimer, chatTimer;
 const PRIORIDADE = {emergencia:0, urgente:1, rotina:2};
 const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];
 const URG_LABELS = {rotina:'ROTINA (12 horas)', urgente:'URGENTE (40 min)', emergencia:'EMERGÊNCIA (15 min)'};
 
 function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#16803a';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,opt);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
 const fmtHora = ts => ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
 function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
-function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
+function normalizarVeiculo(v){return String(v || 'moto').trim().toLowerCase();}
+function veiculoLabel(v){return normalizarVeiculo(v)==='carro'?'Carro':'Moto';}
+function veiculoOptions(v){const atual=normalizarVeiculo(v);return ['moto','carro'].map(x=>`<option value="${x}" ${atual===x?'selected':''}>${veiculoLabel(x)}</option>`).join('');}
 function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'AGUARDANDO ENTREGADOR',em_rota_retirada:'A CAMINHO DA RETIRADA',em_rota:'A CAMINHO DA RETIRADA',despachado:'DESPACHADO / EM ENTREGA',coletado:'DESPACHADO / EM ENTREGA',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
 function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function operadorLinha(p){return p.operador_nome?`<div class="meta">Solicitado por: <strong>${escapeHtml(p.operador_nome)}</strong></div>`:'<div class="meta">Solicitado por: <strong>cadastro antigo não informado</strong></div>';}
+function resumoMensagensLabel(n){return Number(n)===1?'1 mensagem recebida':`${n} mensagens recebidas`;}
 
 document.querySelectorAll('.tabs button').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('on'));
@@ -164,6 +188,7 @@ document.querySelectorAll('.tabs button').forEach(btn=>btn.addEventListener('cli
   btn.classList.add('on'); $('pane-'+btn.dataset.tab).classList.add('on');
   if(btn.dataset.tab==='relatorios') carregarRelatorios();
   if(btn.dataset.tab==='chat') carregarChat();
+  if(btn.dataset.tab==='senhas') carregarLogins();
 }));
 
 async function carregarUnidades(){
@@ -178,16 +203,39 @@ async function carregarUsuarios(){
   const solicitantes = usuarios.filter(u=>u.papel==='solicitante');
   const entregadores = usuarios.filter(u=>u.papel==='entregador');
   $('tabSolicitantes').innerHTML = solicitantes.map(u=>`<tr><td>${escapeHtml(u.nome)}</td><td class="mono">${escapeHtml(u.username)}</td><td>${escapeHtml(u.codigo_ref||'—')}</td><td>${escapeHtml(u.unidade_nome||'—')}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum solicitante.</td></tr>';
-  $('tabEntregadores').innerHTML = entregadores.map(u=>`<tr><td>${escapeHtml(u.nome)}</td><td class="mono">${escapeHtml(u.username)}</td><td>${escapeHtml(u.codigo_ref||'—')}</td><td>${veiculoLabel(u.tipo_veiculo)}</td><td>${situacaoEntregador(u)}</td></tr>`).join('') || '<tr><td colspan="5">Nenhum entregador.</td></tr>';
+  $('tabEntregadores').innerHTML = entregadores.map(u=>`<tr><td>${escapeHtml(u.nome)}</td><td class="mono">${escapeHtml(u.username)}</td><td>${escapeHtml(u.codigo_ref||'—')}</td><td>${veiculoLabel(u.tipo_veiculo)}</td><td>${situacaoEntregador(u)}</td><td><div class="mini-actions"><select id="driverVehicle-${u.id}">${veiculoOptions(u.tipo_veiculo)}</select><button type="button" data-driver-save="${u.id}">Salvar veículo</button><button type="button" class="danger" data-driver-delete="${u.id}">Apagar</button></div></td></tr>`).join('') || '<tr><td colspan="6">Nenhum entregador.</td></tr>';
   $('listDisponiveis').innerHTML = entregadores.map(u=>`<div class="item"><div class="top"><span class="proto">${escapeHtml(u.nome)}</span>${situacaoEntregador(u)}</div><div class="meta">Código: <strong>${escapeHtml(u.codigo_ref||'—')}</strong> · Veículo: <strong>${veiculoLabel(u.tipo_veiculo)}</strong>${u.indisponibilidade_justificativa?`<br>Justificativa: ${escapeHtml(u.indisponibilidade_justificativa)}`:''}</div></div>`).join('') || '<div class="empty">Nenhum entregador cadastrado.</div>';
-  const atual = $('chatSolicitante').value;
-  $('chatSolicitante').innerHTML = solicitantes.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)} · ${escapeHtml(u.unidade_nome||'')}</option>`).join('');
-  if(atual) $('chatSolicitante').value = atual;
+  const atual = $('chatUnidade').value;
+  const vistas = new Set();
+  const unidadesChat = [];
+  solicitantes.forEach(u=>{
+    if(!u.unidade_id || vistas.has(u.unidade_id)) return;
+    vistas.add(u.unidade_id);
+    unidadesChat.push({id:u.unidade_id,nome:u.unidade_nome||'Unidade sem nome'});
+  });
+  $('chatUnidade').innerHTML = unidadesChat.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)}</option>`).join('');
+  if(atual) $('chatUnidade').value = atual;
 }
 function situacaoEntregador(u){
   if(u.ocupado) return '<span class="availability busy">OCUPADO</span>';
   if(u.disponivel) return '<span class="availability available">DISPONÍVEL</span>';
   return '<span class="availability off">INDISPONÍVEL</span>';
+}
+
+function perfilLabel(papel){
+  return {admin:'Admin', solicitante:'Solicitante', entregador:'Entregador'}[papel] || papel;
+}
+function detalheLogin(u){
+  if(u.papel==='solicitante') return u.unidade_nome ? ` · ${escapeHtml(u.unidade_nome)}` : '';
+  if(u.papel==='entregador') return u.tipo_veiculo ? ` · ${veiculoLabel(u.tipo_veiculo)}` : '';
+  return '';
+}
+async function carregarLogins(){
+  logins = await api('/despacho/api/logins');
+  const atual = $('resetUsuario').value;
+  $('resetUsuario').innerHTML = logins.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)} · ${escapeHtml(u.username)} · ${perfilLabel(u.papel)}${detalheLogin(u)}</option>`).join('');
+  if(atual) $('resetUsuario').value = atual;
+  $('tabLogins').innerHTML = logins.map(u=>`<tr><td>${escapeHtml(u.nome)}</td><td class="mono">${escapeHtml(u.username)}</td><td>${perfilLabel(u.papel)}</td><td>${escapeHtml(u.codigo_ref||'—')}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum login ativo.</td></tr>';
 }
 
 function linhaTempo(p){
@@ -204,6 +252,7 @@ function cardPedido(p, mapa=false){
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)} · <span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span> ${p.entregador?' · '+escapeHtml(p.entregador):''}</div>
     <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span> <span class="tag tipo">${escapeHtml(p.tipo)}</span></div>
+    ${operadorLinha(p)}
     <div class="meta">${slaLinha(p)}</div>
     ${linhaTempo(p)}
     ${mapa?`<div class="map" id="map-${p.id}"></div><div class="map-meta" id="map-meta-${p.id}">Aguardando localização...</div>`:''}
@@ -213,6 +262,7 @@ function cardFila(p){
   return `<div class="item">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)} · Veículo: <strong>${veiculoLabel(p.tipo_veiculo)}</strong></div>
+    ${operadorLinha(p)}
     <div class="meta">${slaLinha(p)}</div>${linhaTempo(p)}<div class="chips" id="chips-${p.id}"></div>
   </div>`;
 }
@@ -226,7 +276,7 @@ async function atualizarMapa(p){
   mapas.set(p.id,mapa);
   if(!pontos.length){$('map-meta-'+p.id).textContent='Rota ativa; aguardando primeira posição.';return;}
   const coords=pontos.map(x=>[x.latitude,x.longitude]);
-  L.polyline(coords,{color:'#16803a',weight:4}).addTo(mapa); L.marker(coords[coords.length-1]).addTo(mapa);
+  L.polyline(coords,{color:'#009962',weight:4}).addTo(mapa); L.marker(coords[coords.length-1]).addTo(mapa);
   mapa.fitBounds(coords.length>1?coords:L.latLngBounds(coords[0],coords[0]).pad(.08));
   $('map-meta-'+p.id).textContent=`Última posição: ${fmtHora(pontos[pontos.length-1].ts)}`;
   setTimeout(()=>mapa.invalidateSize(),0);
@@ -238,7 +288,7 @@ async function renderPedidos(){
   $('listFila').innerHTML = fila.length?fila.map(cardFila).join(''):'<div class="empty">Fila vazia.</div>';
   const entregadores = usuarios.filter(u=>u.papel==='entregador' && u.disponivel && !u.ocupado);
   fila.forEach(p=>{
-    const compativeis = entregadores.filter(e=>e.tipo_veiculo===p.tipo_veiculo);
+    const compativeis = entregadores.filter(e=>normalizarVeiculo(e.tipo_veiculo)===normalizarVeiculo(p.tipo_veiculo));
     $('chips-'+p.id).innerHTML = compativeis.map(e=>`<button class="chip" data-desp="${p.id}" data-ent="${e.id}">Despachar p/ ${escapeHtml(e.nome)} (${veiculoLabel(e.tipo_veiculo)})</button>`).join('') || '<span class="meta">Nenhum entregador disponível compatível.</span>';
   });
   const andamento = pedidosAtuais.filter(p=>['aguardando_entregador','em_rota_retirada','em_rota','despachado','coletado'].includes(p.status));
@@ -249,9 +299,35 @@ async function renderPedidos(){
 }
 
 document.addEventListener('click', async e=>{
+  const chatItem = e.target.closest('[data-chat-unit]');
+  if(chatItem){
+    $('chatUnidade').value = chatItem.dataset.chatUnit;
+    await carregarChat();
+    return;
+  }
   if(e.target.dataset.desp){
     try{await api(`/despacho/api/pedidos/${e.target.dataset.desp}/despachar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entregador_id:parseInt(e.target.dataset.ent)})});toast('Pedido atribuído ao entregador');renderPedidos();}
     catch(err){toast(err.message,'danger');}
+    return;
+  }
+  if(e.target.dataset.driverSave){
+    const id = parseInt(e.target.dataset.driverSave);
+    const select = $('driverVehicle-'+id);
+    try{
+      await api(`/despacho/api/usuarios/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo_veiculo:select.value})});
+      toast('Veículo atualizado');
+      await carregarUsuarios(); await renderPedidos();
+    }catch(err){toast(err.message,'danger');}
+    return;
+  }
+  if(e.target.dataset.driverDelete){
+    const id = parseInt(e.target.dataset.driverDelete);
+    if(!confirm('Apagar este entregador? O histórico de corridas será mantido.')) return;
+    try{
+      await api(`/despacho/api/usuarios/${id}`,{method:'DELETE'});
+      toast('Entregador apagado');
+      await carregarUsuarios(); await carregarLogins(); await renderPedidos();
+    }catch(err){toast(err.message,'danger');}
   }
 });
 
@@ -262,6 +338,16 @@ async function cadastrarUsuario(body){
 $('btnAddUnidade').onclick=async()=>{const nome=$('novaUnidadeNome').value.trim();if(!nome)return;try{await api('/despacho/api/unidades',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})});$('novaUnidadeNome').value='';await carregarUnidades();toast('Unidade cadastrada');}catch(e){toast(e.message,'danger');}};
 $('btnAddSolicitante').onclick=async()=>{try{await cadastrarUsuario({nome:$('novoSolicitanteNome').value.trim(),username:$('novoSolicitanteLogin').value.trim(),senha:$('novoSolicitanteSenha').value,papel:'solicitante',codigo_ref:$('novoSolicitanteCodigo').value.trim(),unidade_id:parseInt($('novoSolicitanteUnidade').value)});['novoSolicitanteNome','novoSolicitanteLogin','novoSolicitanteSenha','novoSolicitanteCodigo'].forEach(id=>$(id).value='');}catch(e){toast(e.message,'danger');}};
 $('btnAddEntregador').onclick=async()=>{try{await cadastrarUsuario({nome:$('novoEntregadorNome').value.trim(),username:$('novoEntregadorLogin').value.trim(),senha:$('novoEntregadorSenha').value,papel:'entregador',codigo_ref:$('novoEntregadorCodigo').value.trim(),tipo_veiculo:$('novoEntregadorVeiculo').value});['novoEntregadorNome','novoEntregadorLogin','novoEntregadorSenha','novoEntregadorCodigo'].forEach(id=>$(id).value='');}catch(e){toast(e.message,'danger');}};
+$('btnResetSenha').onclick=async()=>{
+  const id = parseInt($('resetUsuario').value);
+  const senha = $('resetSenha').value.trim();
+  if(!id || senha.length < 4){toast('Informe o login e uma senha com ao menos 4 caracteres','danger');return;}
+  try{
+    await api(`/despacho/api/usuarios/${id}/senha`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha})});
+    $('resetSenha').value='';
+    toast('Senha atualizada');
+  }catch(e){toast(e.message,'danger');}
+};
 
 function setupRelatorios(){
   const hoje=new Date(); $('relAno').value=hoje.getFullYear();
@@ -277,18 +363,18 @@ $('btnRelatorios').onclick=carregarRelatorios;
 
 async function carregarChat(){
   await carregarUsuarios();
-  const solicitanteId=$('chatSolicitante').value;
-  const todas=await api('/despacho/api/chat');
-  $('chatResumo').innerHTML=todas.slice(-20).reverse().map(m=>`<div class="item"><div class="top"><span class="proto">${escapeHtml(m.remetente_nome)}</span><span class="tag tipo">${fmtHora(m.ts)}</span></div><div class="meta">${escapeHtml(m.texto)}</div></div>`).join('')||'<div class="empty">Sem mensagens ainda.</div>';
-  if(!solicitanteId){$('chatMensagens').innerHTML='<div class="empty">Cadastre ou selecione um solicitante.</div>';return;}
-  const msgs=await api(`/despacho/api/chat?solicitante_id=${solicitanteId}`);
+  const unidadeId=$('chatUnidade').value;
+  const resumo=await api('/despacho/api/chat/resumo');
+  $('chatResumo').innerHTML=resumo.map(r=>`<div class="item" data-chat-unit="${r.unidade_id}"><div class="top"><span class="proto">${escapeHtml(r.unidade||'Unidade')}</span><span class="tag tipo">${resumoMensagensLabel(r.recebidas)}</span></div><div class="meta">Total na conversa: <strong>${r.total}</strong> · Última movimentação: ${fmtHora(r.ultimo_ts)}</div></div>`).join('')||'<div class="empty">Sem mensagens ainda.</div>';
+  if(!unidadeId){$('chatMensagens').innerHTML='<div class="empty">Cadastre ou selecione uma unidade.</div>';return;}
+  const msgs=await api(`/despacho/api/chat?unidade_id=${unidadeId}`);
   $('chatMensagens').innerHTML=msgs.map(m=>`<div class="msg ${m.remetente_papel==='admin'?'admin':''}"><div class="who">${escapeHtml(m.remetente_nome)} · ${fmtHora(m.ts)}</div><p>${escapeHtml(m.texto)}</p></div>`).join('')||'<div class="empty">Nenhuma mensagem nesta conversa.</div>';
   $('chatMensagens').scrollTop=$('chatMensagens').scrollHeight;
 }
-$('chatSolicitante').onchange=carregarChat;
-$('btnEnviarChat').onclick=async()=>{const texto=$('chatTexto').value.trim(), solicitante_id=parseInt($('chatSolicitante').value);if(!texto||!solicitante_id)return;try{await api('/despacho/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({solicitante_id,texto})});$('chatTexto').value='';await carregarChat();}catch(e){toast(e.message,'danger');}};
+$('chatUnidade').onchange=carregarChat;
+$('btnEnviarChat').onclick=async()=>{const texto=$('chatTexto').value.trim(), unidade_id=parseInt($('chatUnidade').value);if(!texto||!unidade_id)return;try{await api('/despacho/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unidade_id,texto})});$('chatTexto').value='';await carregarChat();}catch(e){toast(e.message,'danger');}};
 
-async function init(){setupRelatorios();await carregarUnidades();await carregarUsuarios();await renderPedidos();}
+async function init(){setupRelatorios();await carregarUnidades();await carregarUsuarios();await carregarLogins();await renderPedidos();}
 init();
 setInterval(renderPedidos,15000);
 chatTimer=setInterval(()=>{if($('pane-chat').classList.contains('on')) carregarChat();},6000);

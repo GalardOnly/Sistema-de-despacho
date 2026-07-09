@@ -1,8 +1,10 @@
 """Rotas do sistema de despacho de coletas."""
 
 import calendar
+import hashlib
 import math
 import os
+import secrets
 import sqlite3
 import time
 from datetime import datetime, time as dt_time
@@ -71,6 +73,11 @@ def _ensure_column(con, table, column, definition):
         con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def _normalizar_veiculo(valor, padrao=None):
+    texto = " ".join((valor or "").strip().split()).casefold()
+    return texto or padrao
+
+
 def init_db_desp():
     con = sqlite3.connect(DESP_DB_PATH)
     con.executescript(
@@ -106,6 +113,7 @@ def init_db_desp():
             status      TEXT NOT NULL DEFAULT 'solicitado',
             entregador_id INTEGER REFERENCES usuarios(id),
             criado_por  INTEGER REFERENCES usuarios(id),
+            operador_id INTEGER REFERENCES operadores_solicitante(id),
             ts_solicitado INTEGER NOT NULL,
             ts_aceito_admin INTEGER,
             ts_despachado INTEGER,
@@ -115,6 +123,24 @@ def init_db_desp():
             ts_cancelado  INTEGER,
             motivo_cancelamento TEXT,
             justificativa_atraso TEXT
+        );
+        CREATE TABLE IF NOT EXISTS operadores_solicitante(
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            unidade_id  INTEGER NOT NULL REFERENCES unidades(id),
+            nome        TEXT NOT NULL,
+            codigo      TEXT NOT NULL,
+            ativo       INTEGER NOT NULL DEFAULT 1,
+            criado_em   INTEGER NOT NULL,
+            UNIQUE(unidade_id, codigo)
+        );
+        CREATE TABLE IF NOT EXISTS tipos_coleta_unidade(
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            unidade_id  INTEGER NOT NULL REFERENCES unidades(id),
+            nome        TEXT NOT NULL,
+            nome_normalizado TEXT NOT NULL,
+            ativo       INTEGER NOT NULL DEFAULT 1,
+            criado_em   INTEGER NOT NULL,
+            UNIQUE(unidade_id, nome_normalizado)
         );
         CREATE TABLE IF NOT EXISTS localizacoes_pedido(
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,15 +161,35 @@ def init_db_desp():
         CREATE TABLE IF NOT EXISTS chat_mensagens(
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             solicitante_id INTEGER NOT NULL REFERENCES usuarios(id),
+            unidade_id     INTEGER REFERENCES unidades(id),
             remetente_id   INTEGER NOT NULL REFERENCES usuarios(id),
             remetente_papel TEXT NOT NULL,
             texto          TEXT NOT NULL,
             ts             INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS notificacoes(
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            papel_destino  TEXT NOT NULL,
+            usuario_id     INTEGER REFERENCES usuarios(id),
+            unidade_id     INTEGER REFERENCES unidades(id),
+            pedido_id      INTEGER REFERENCES pedidos(id),
+            tipo           TEXT NOT NULL,
+            titulo         TEXT NOT NULL,
+            mensagem       TEXT NOT NULL,
+            lida           INTEGER NOT NULL DEFAULT 0,
+            criado_em      INTEGER NOT NULL,
+            lida_em        INTEGER
+        );
         CREATE INDEX IF NOT EXISTS idx_localizacoes_pedido_ts
             ON localizacoes_pedido(pedido_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_operadores_solicitante_unidade
+            ON operadores_solicitante(unidade_id, ativo, nome);
+        CREATE INDEX IF NOT EXISTS idx_tipos_coleta_unidade
+            ON tipos_coleta_unidade(unidade_id, ativo, nome);
         CREATE INDEX IF NOT EXISTS idx_chat_solicitante_ts
             ON chat_mensagens(solicitante_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_notificacoes_destino
+            ON notificacoes(papel_destino, usuario_id, unidade_id, lida, criado_em);
         """
     )
 
@@ -164,8 +210,14 @@ def init_db_desp():
         ("tipo_veiculo", "TEXT"),
         ("sla_limite_min", "INTEGER"),
         ("justificativa_atraso", "TEXT"),
+        ("operador_id", "INTEGER REFERENCES operadores_solicitante(id)"),
     ):
         _ensure_column(con, "pedidos", column, definition)
+
+    _ensure_column(con, "chat_mensagens", "unidade_id", "INTEGER REFERENCES unidades(id)")
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_unidade_ts ON chat_mensagens(unidade_id, ts)"
+    )
 
     default_units = ["Santa Casa", "Unimed-Lar", "Unimed-Camu 1", "Unimed-Camu 2", "Unimed Farmais"]
     for nome in default_units:
@@ -179,7 +231,15 @@ def init_db_desp():
         "UPDATE pedidos SET status='aguardando_entregador' "
         "WHERE status='despachado' AND ts_coletado IS NULL AND ts_entregue IS NULL"
     )
-    con.execute("UPDATE pedidos SET tipo_veiculo='moto' WHERE tipo_veiculo IS NULL OR tipo_veiculo=''")
+    con.execute(
+        "UPDATE pedidos SET tipo_veiculo='moto' WHERE tipo_veiculo IS NULL OR TRIM(tipo_veiculo)=''"
+    )
+    con.execute(
+        "UPDATE usuarios SET tipo_veiculo='moto' "
+        "WHERE papel='entregador' AND (tipo_veiculo IS NULL OR TRIM(tipo_veiculo)='')"
+    )
+    con.execute("UPDATE pedidos SET tipo_veiculo=LOWER(TRIM(tipo_veiculo)) WHERE tipo_veiculo IS NOT NULL")
+    con.execute("UPDATE usuarios SET tipo_veiculo=LOWER(TRIM(tipo_veiculo)) WHERE tipo_veiculo IS NOT NULL")
     for urgencia, meta in URGENCIA_META.items():
         con.execute(
             "UPDATE pedidos SET sla_limite_min=? WHERE urgencia=? AND sla_limite_min IS NULL",
@@ -194,6 +254,16 @@ def init_db_desp():
             "INSERT INTO usuarios(nome,username,senha_hash,papel,unidade_id) VALUES(?,?,?,?,?)",
             ("Administrador", "admin", generate_password_hash(ADMIN_SENHA_INICIAL), "admin", None),
         )
+
+    con.execute(
+        """
+        UPDATE chat_mensagens
+        SET unidade_id = (
+            SELECT unidade_id FROM usuarios WHERE usuarios.id = chat_mensagens.solicitante_id
+        )
+        WHERE unidade_id IS NULL
+        """
+    )
 
     con.commit()
     con.close()
@@ -231,6 +301,151 @@ def _nome_usuario(con, usuario_id):
     return row["nome"] if row else None
 
 
+def _normalizar_tipo_coleta(nome):
+    return " ".join((nome or "").strip().split()).casefold()
+
+
+def _tipos_base_sem_outro():
+    return [tipo for tipo in TIPOS_EXAME if tipo != "Outro"]
+
+
+def _tipos_exame_da_unidade(con, unidade_id):
+    tipos = list(_tipos_base_sem_outro())
+    vistos = {_normalizar_tipo_coleta(tipo) for tipo in tipos}
+    rows = con.execute(
+        """
+        SELECT nome
+        FROM tipos_coleta_unidade
+        WHERE unidade_id=? AND ativo=1
+        ORDER BY nome
+        """,
+        (unidade_id,),
+    ).fetchall()
+    for row in rows:
+        normalizado = _normalizar_tipo_coleta(row["nome"])
+        if normalizado and normalizado not in vistos:
+            tipos.append(row["nome"])
+            vistos.add(normalizado)
+    tipos.append("Outro")
+    return tipos
+
+
+def _buscar_tipo_custom(con, unidade_id, nome):
+    normalizado = _normalizar_tipo_coleta(nome)
+    if not normalizado:
+        return None
+    return con.execute(
+        """
+        SELECT nome
+        FROM tipos_coleta_unidade
+        WHERE unidade_id=? AND nome_normalizado=? AND ativo=1
+        """,
+        (unidade_id, normalizado),
+    ).fetchone()
+
+
+def _salvar_tipo_custom(con, unidade_id, nome):
+    nome_limpo = " ".join((nome or "").strip().split())
+    normalizado = _normalizar_tipo_coleta(nome_limpo)
+    if len(nome_limpo) < 2 or normalizado == "outro":
+        return None
+
+    tipos_base = {_normalizar_tipo_coleta(tipo): tipo for tipo in _tipos_base_sem_outro()}
+    if normalizado in tipos_base:
+        return tipos_base[normalizado]
+
+    con.execute(
+        """
+        INSERT OR IGNORE INTO tipos_coleta_unidade(unidade_id,nome,nome_normalizado,ativo,criado_em)
+        VALUES(?,?,?,?,?)
+        """,
+        (unidade_id, nome_limpo, normalizado, 1, agora_ms()),
+    )
+    row = _buscar_tipo_custom(con, unidade_id, nome_limpo)
+    return row["nome"] if row else nome_limpo
+
+
+def _resolver_tipo_pedido(con, unidade_id, tipo, tipo_outro=None):
+    tipo_limpo = " ".join((tipo or "").strip().split())
+    normalizado = _normalizar_tipo_coleta(tipo_limpo)
+    tipos_base = {_normalizar_tipo_coleta(t): t for t in _tipos_base_sem_outro()}
+
+    if normalizado == "outro":
+        return _salvar_tipo_custom(con, unidade_id, tipo_outro)
+    if normalizado in tipos_base:
+        return tipos_base[normalizado]
+
+    row = _buscar_tipo_custom(con, unidade_id, tipo_limpo)
+    return row["nome"] if row else None
+
+
+def _gerar_codigo_operador(con, unidade_id, nome):
+    for _ in range(20):
+        base = f"{unidade_id}:{nome}:{agora_ms()}:{secrets.token_hex(16)}"
+        codigo = hashlib.sha256(base.encode("utf-8")).hexdigest()
+        existe = con.execute(
+            "SELECT 1 FROM operadores_solicitante WHERE unidade_id=? AND codigo=? LIMIT 1",
+            (unidade_id, codigo),
+        ).fetchone()
+        if not existe:
+            return codigo
+    raise RuntimeError("não foi possível gerar o identificador interno")
+
+
+def _normalizar_nome_operador(nome):
+    return " ".join((nome or "").strip().split()).casefold()
+
+
+def _buscar_ou_criar_operador(con, unidade_id, nome):
+    nome_limpo = " ".join((nome or "").strip().split())
+    if len(nome_limpo) < 2:
+        return None
+
+    nome_normalizado = _normalizar_nome_operador(nome_limpo)
+    rows = con.execute(
+        """
+        SELECT id, unidade_id, nome, codigo, ativo, criado_em
+        FROM operadores_solicitante
+        WHERE unidade_id=? AND ativo=1
+        ORDER BY id
+        """,
+        (unidade_id,),
+    ).fetchall()
+    for row in rows:
+        if _normalizar_nome_operador(row["nome"]) == nome_normalizado:
+            return row
+
+    codigo = _gerar_codigo_operador(con, unidade_id, nome_limpo)
+    cur = con.execute(
+        "INSERT INTO operadores_solicitante(unidade_id,nome,codigo,ativo,criado_em) "
+        "VALUES(?,?,?,?,?)",
+        (unidade_id, nome_limpo, codigo, 1, agora_ms()),
+    )
+    return con.execute(
+        "SELECT id, unidade_id, nome, codigo, ativo, criado_em FROM operadores_solicitante WHERE id=?",
+        (cur.lastrowid,),
+    ).fetchone()
+
+
+def _operador_linha(row):
+    return {
+        "id": row["id"],
+        "unidade_id": row["unidade_id"],
+        "nome": row["nome"],
+        "ativo": bool(row["ativo"]),
+        "criado_em": row["criado_em"],
+    }
+
+
+def _operador_do_pedido(con, operador_id):
+    if not operador_id:
+        return None
+    return con.execute(
+        "SELECT id, unidade_id, nome, codigo, ativo, criado_em FROM operadores_solicitante WHERE id=?",
+        (operador_id,),
+    ).fetchone()
+
+
 def _sla_do_pedido(r, referencia_ms=None):
     d = _as_dict(r)
     limite_min = d.get("sla_limite_min") or _sla_limite_min(d.get("urgencia"))
@@ -262,6 +477,7 @@ def linha_pedido(con, r):
     d = _as_dict(r)
     entregador = _nome_usuario(con, d.get("entregador_id"))
     solicitante = _nome_usuario(con, d.get("criado_por"))
+    operador = _operador_do_pedido(con, d.get("operador_id"))
     return {
         "id": d["id"],
         "protocolo": d.get("protocolo") or _protocolo(d["id"]),
@@ -272,7 +488,7 @@ def linha_pedido(con, r):
         "tipo": d["tipo"],
         "urgencia": d["urgencia"],
         "urgencia_label": URGENCIA_META.get(d["urgencia"], {}).get("label", d["urgencia"]),
-        "tipo_veiculo": d.get("tipo_veiculo") or "moto",
+        "tipo_veiculo": _normalizar_veiculo(d.get("tipo_veiculo"), "moto"),
         "sla_limite_min": d.get("sla_limite_min") or _sla_limite_min(d["urgencia"]),
         "sla": _sla_do_pedido(d),
         "status": d["status"],
@@ -280,6 +496,8 @@ def linha_pedido(con, r):
         "entregador": entregador,
         "solicitante_id": d.get("criado_por"),
         "solicitante": solicitante,
+        "operador_id": d.get("operador_id"),
+        "operador_nome": operador["nome"] if operador else None,
         "ts": {
             "solicitado": d.get("ts_solicitado"),
             "aceito_admin": d.get("ts_aceito_admin"),
@@ -327,6 +545,7 @@ def _chat_linha(row):
     return {
         "id": row["id"],
         "solicitante_id": row["solicitante_id"],
+        "unidade_id": row["unidade_id"],
         "remetente_id": row["remetente_id"],
         "remetente_nome": row["remetente_nome"],
         "remetente_papel": row["remetente_papel"],
@@ -334,6 +553,194 @@ def _chat_linha(row):
         "texto": row["texto"],
         "ts": row["ts"],
     }
+
+
+def _notificacao_linha(row):
+    return {
+        "id": row["id"],
+        "papel_destino": row["papel_destino"],
+        "usuario_id": row["usuario_id"],
+        "unidade_id": row["unidade_id"],
+        "pedido_id": row["pedido_id"],
+        "protocolo": row["protocolo"],
+        "tipo": row["tipo"],
+        "titulo": row["titulo"],
+        "mensagem": row["mensagem"],
+        "lida": bool(row["lida"]),
+        "criado_em": row["criado_em"],
+        "lida_em": row["lida_em"],
+    }
+
+
+def _criar_notificacao(
+    con,
+    papel_destino,
+    titulo,
+    mensagem,
+    tipo="info",
+    pedido_id=None,
+    usuario_id=None,
+    unidade_id=None,
+):
+    con.execute(
+        """
+        INSERT INTO notificacoes(
+            papel_destino, usuario_id, unidade_id, pedido_id, tipo, titulo, mensagem, lida, criado_em
+        ) VALUES(?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            papel_destino,
+            usuario_id,
+            unidade_id,
+            pedido_id,
+            tipo,
+            titulo,
+            mensagem,
+            0,
+            agora_ms(),
+        ),
+    )
+
+
+def _pedido_resumo(con, pedido):
+    protocolo = pedido["protocolo"] or _protocolo(pedido["id"])
+    origem = _nome_unidade(con, pedido["origem_id"])
+    destino = _nome_unidade(con, pedido["destino_id"])
+    return protocolo, origem, destino
+
+
+def _notificar_admin_novo_pedido(con, pedido):
+    protocolo, origem, destino = _pedido_resumo(con, pedido)
+    _criar_notificacao(
+        con,
+        "admin",
+        "Novo pedido para retirada",
+        f"{protocolo}: {origem} solicitou coleta para {destino}.",
+        "pedido",
+        pedido_id=pedido["id"],
+    )
+
+
+def _notificar_despacho(con, pedido):
+    protocolo, origem, destino = _pedido_resumo(con, pedido)
+    entregador = _nome_usuario(con, pedido["entregador_id"]) or "Entregador"
+    _criar_notificacao(
+        con,
+        "entregador",
+        "Novo pedido atribuído",
+        f"{protocolo}: retire em {origem} e entregue em {destino}.",
+        "despacho",
+        pedido_id=pedido["id"],
+        usuario_id=pedido["entregador_id"],
+    )
+    _criar_notificacao(
+        con,
+        "solicitante",
+        "Pedido aceito pelo admin",
+        f"{protocolo}: {entregador} foi acionado e irá retirar o exame.",
+        "despacho",
+        pedido_id=pedido["id"],
+        unidade_id=pedido["origem_id"],
+    )
+
+
+def _notificar_entregador_a_caminho(con, pedido):
+    protocolo, origem, _destino = _pedido_resumo(con, pedido)
+    entregador = _nome_usuario(con, pedido["entregador_id"]) or "Entregador"
+    _criar_notificacao(
+        con,
+        "solicitante",
+        "Entregador a caminho",
+        f"{protocolo}: {entregador} aceitou o pedido e está indo para {origem}.",
+        "rota",
+        pedido_id=pedido["id"],
+        unidade_id=pedido["origem_id"],
+    )
+
+
+def _notificar_retirada(con, pedido):
+    protocolo, origem, destino = _pedido_resumo(con, pedido)
+    mensagem = f"{protocolo}: exame retirado em {origem} e em transporte para {destino}."
+    _criar_notificacao(
+        con,
+        "admin",
+        "Exame retirado",
+        mensagem,
+        "retirada",
+        pedido_id=pedido["id"],
+    )
+    _criar_notificacao(
+        con,
+        "solicitante",
+        "Exame retirado",
+        mensagem,
+        "retirada",
+        pedido_id=pedido["id"],
+        unidade_id=pedido["origem_id"],
+    )
+
+
+def _notificar_entrega(con, pedido):
+    protocolo, _origem, destino = _pedido_resumo(con, pedido)
+    mensagem = f"{protocolo}: entrega confirmada em {destino}."
+    _criar_notificacao(
+        con,
+        "admin",
+        "Entrega confirmada",
+        mensagem,
+        "entrega",
+        pedido_id=pedido["id"],
+    )
+    _criar_notificacao(
+        con,
+        "solicitante",
+        "Entrega confirmada",
+        mensagem,
+        "entrega",
+        pedido_id=pedido["id"],
+        unidade_id=pedido["origem_id"],
+    )
+
+
+def _resumo_mensagem_chat(texto, limite=120):
+    resumo = " ".join((texto or "").split())
+    if len(resumo) <= limite:
+        return resumo
+    return resumo[: limite - 1].rstrip() + "…"
+
+
+def _notificar_chat(con, papel_remetente, unidade_id, texto):
+    unidade = _nome_unidade(con, unidade_id) or "Unidade"
+    resumo = _resumo_mensagem_chat(texto)
+    if papel_remetente == "solicitante":
+        _criar_notificacao(
+            con,
+            "admin",
+            "Nova mensagem no chat",
+            f"{unidade}: {resumo}",
+            "chat",
+            unidade_id=unidade_id,
+        )
+    elif papel_remetente == "admin":
+        _criar_notificacao(
+            con,
+            "solicitante",
+            "Mensagem do administrador",
+            f"Admin para {unidade}: {resumo}",
+            "chat",
+            unidade_id=unidade_id,
+        )
+
+
+def _filtro_notificacoes_sessao(alias="n"):
+    papel = session["desp_papel"]
+    if papel == "admin":
+        return f"{alias}.papel_destino='admin'", []
+    if papel == "entregador":
+        return f"{alias}.papel_destino='entregador' AND {alias}.usuario_id=?", [session["desp_uid"]]
+    return f"{alias}.papel_destino='solicitante' AND {alias}.unidade_id=?", [
+        session["desp_unidade_id"]
+    ]
 
 
 def login_required_desp(*papeis_permitidos):
@@ -445,7 +852,7 @@ def api_usuarios():
         papel = d.get("papel")
         unidade_id = d.get("unidade_id")
         codigo_ref = (d.get("codigo_ref") or "").strip()
-        tipo_veiculo = (d.get("tipo_veiculo") or "").strip().lower() or None
+        tipo_veiculo = _normalizar_veiculo(d.get("tipo_veiculo"))
 
         if not (nome and username and senha and papel in PAPEIS):
             return jsonify(error="dados incompletos"), 400
@@ -453,7 +860,7 @@ def api_usuarios():
             return jsonify(error="código de referência obrigatório"), 400
         if codigo_ref:
             duplicado = con.execute(
-                "SELECT 1 FROM usuarios WHERE codigo_ref=? AND papel!='admin' LIMIT 1",
+                "SELECT 1 FROM usuarios WHERE codigo_ref=? AND papel!='admin' AND ativo=1 LIMIT 1",
                 (codigo_ref,),
             ).fetchone()
             if duplicado:
@@ -497,11 +904,102 @@ def api_usuarios():
                      AND p.status IN ('aguardando_entregador','em_rota_retirada','em_rota','despachado','coletado')
                ) THEN 1 ELSE 0 END AS ocupado
         FROM usuarios u LEFT JOIN unidades un ON un.id = u.unidade_id
-        WHERE u.papel != 'admin'
+        WHERE u.papel != 'admin' AND u.ativo = 1
         ORDER BY u.papel, u.nome
         """
     ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+@despacho_bp.route("/api/usuarios/<int:uid>", methods=["PATCH", "DELETE"])
+@login_required_desp("admin")
+def api_usuario_admin(uid):
+    con = get_db_desp()
+    usuario = con.execute(
+        "SELECT * FROM usuarios WHERE id=? AND papel='entregador' AND ativo=1", (uid,)
+    ).fetchone()
+    if not usuario:
+        return jsonify(error="entregador não encontrado"), 404
+
+    if _entregador_ocupado(con, uid):
+        return jsonify(error="entregador está em atendimento"), 400
+
+    if request.method == "DELETE":
+        con.execute(
+            """
+            UPDATE usuarios
+            SET ativo=0,
+                disponivel=0,
+                username=username || '__apagado_' || id,
+                codigo_ref=CASE
+                    WHEN codigo_ref IS NULL THEN NULL
+                    ELSE codigo_ref || '__apagado_' || id
+                END
+            WHERE id=? AND papel='entregador'
+            """,
+            (uid,),
+        )
+        con.commit()
+        return jsonify(ok=True, id=uid)
+
+    d = request.get_json(silent=True) or {}
+    tipo_veiculo = _normalizar_veiculo(d.get("tipo_veiculo"))
+    if tipo_veiculo not in TIPOS_VEICULO:
+        return jsonify(error="tipo de veículo inválido"), 400
+
+    con.execute("UPDATE usuarios SET tipo_veiculo=? WHERE id=?", (tipo_veiculo, uid))
+    con.commit()
+    row = con.execute(
+        "SELECT id, nome, username, papel, unidade_id, disponivel, codigo_ref, tipo_veiculo "
+        "FROM usuarios WHERE id=?",
+        (uid,),
+    ).fetchone()
+    return jsonify(dict(row))
+
+
+@despacho_bp.route("/api/logins")
+@login_required_desp("admin")
+def api_logins():
+    con = get_db_desp()
+    rows = con.execute(
+        """
+        SELECT u.id, u.nome, u.username, u.papel, u.unidade_id,
+               u.codigo_ref, u.tipo_veiculo, un.nome AS unidade_nome
+        FROM usuarios u
+        LEFT JOIN unidades un ON un.id = u.unidade_id
+        WHERE u.ativo = 1
+        ORDER BY CASE u.papel
+            WHEN 'admin' THEN 0
+            WHEN 'solicitante' THEN 1
+            WHEN 'entregador' THEN 2
+            ELSE 3
+        END, u.nome
+        """
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@despacho_bp.route("/api/usuarios/<int:uid>/senha", methods=["POST"])
+@login_required_desp("admin")
+def api_alterar_senha_usuario(uid):
+    con = get_db_desp()
+    d = request.get_json(silent=True) or {}
+    senha = (d.get("senha") or d.get("nova_senha") or "").strip()
+    if len(senha) < 4:
+        return jsonify(error="senha deve ter pelo menos 4 caracteres"), 400
+
+    usuario = con.execute(
+        "SELECT id, username FROM usuarios WHERE id=? AND ativo=1", (uid,)
+    ).fetchone()
+    if not usuario:
+        return jsonify(error="login não encontrado"), 404
+
+    con.execute(
+        "UPDATE usuarios SET senha_hash=? WHERE id=?",
+        (generate_password_hash(senha), uid),
+    )
+    con.commit()
+    return jsonify(ok=True, id=usuario["id"], username=usuario["username"])
 
 
 @despacho_bp.route("/api/disponibilidade", methods=["GET", "POST"])
@@ -554,6 +1052,80 @@ def api_disponibilidade():
     )
 
 
+@despacho_bp.route("/api/operadores", methods=["GET", "POST"])
+@login_required_desp("solicitante")
+def api_operadores():
+    con = get_db_desp()
+    unidade_id = session.get("desp_unidade_id")
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        operador = _buscar_ou_criar_operador(con, unidade_id, d.get("nome"))
+        if not operador:
+            return jsonify(error="nome obrigatório"), 400
+        con.commit()
+        return jsonify(_operador_linha(operador))
+
+    rows = con.execute(
+        """
+        SELECT id, unidade_id, nome, codigo, ativo, criado_em
+        FROM operadores_solicitante
+        WHERE unidade_id=? AND ativo=1
+        ORDER BY nome
+        """,
+        (unidade_id,),
+    ).fetchall()
+    return jsonify([_operador_linha(row) for row in rows])
+
+
+@despacho_bp.route("/api/tipos-exame")
+@login_required_desp("solicitante")
+def api_tipos_exame():
+    con = get_db_desp()
+    return jsonify(_tipos_exame_da_unidade(con, session["desp_unidade_id"]))
+
+
+@despacho_bp.route("/api/notificacoes")
+@login_required_desp("admin", "solicitante", "entregador")
+def api_notificacoes():
+    con = get_db_desp()
+    where, params = _filtro_notificacoes_sessao("n")
+    total_nao_lidas = con.execute(
+        f"SELECT COUNT(*) AS n FROM notificacoes n WHERE {where} AND n.lida=0",
+        params,
+    ).fetchone()["n"]
+    rows = con.execute(
+        f"""
+        SELECT n.*, p.protocolo
+        FROM notificacoes n
+        LEFT JOIN pedidos p ON p.id = n.pedido_id
+        WHERE {where} AND n.lida=0
+        ORDER BY n.criado_em DESC, n.id DESC
+        LIMIT 40
+        """,
+        params,
+    ).fetchall()
+    return jsonify(
+        nao_lidas=total_nao_lidas,
+        notificacoes=[_notificacao_linha(row) for row in rows],
+    )
+
+
+@despacho_bp.route("/api/notificacoes/<int:nid>/lida", methods=["POST"])
+@login_required_desp("admin", "solicitante", "entregador")
+def api_notificacao_lida(nid):
+    con = get_db_desp()
+    where, params = _filtro_notificacoes_sessao("n")
+    row = con.execute(
+        f"SELECT n.id FROM notificacoes n WHERE n.id=? AND {where}",
+        (nid, *params),
+    ).fetchone()
+    if not row:
+        return jsonify(error="notificação não encontrada"), 404
+    con.execute("UPDATE notificacoes SET lida=1, lida_em=? WHERE id=?", (agora_ms(), nid))
+    con.commit()
+    return jsonify(ok=True)
+
+
 @despacho_bp.route("/api/pedidos", methods=["GET", "POST"])
 @login_required_desp()
 def api_pedidos():
@@ -565,19 +1137,24 @@ def api_pedidos():
             return jsonify(error="apenas solicitantes abrem pedidos"), 403
         d = request.get_json(force=True)
         destino_id = d.get("destino_id")
-        tipo = d.get("tipo")
         urgencia = d.get("urgencia")
-        tipo_veiculo = (d.get("tipo_veiculo") or "").strip().lower()
+        tipo_veiculo = _normalizar_veiculo(d.get("tipo_veiculo"), "")
         origem_id = session["desp_unidade_id"]
-        if tipo not in TIPOS_EXAME or urgencia not in URGENCIAS:
-            return jsonify(error="tipo ou urgência inválidos"), 400
+        operador = _buscar_ou_criar_operador(con, origem_id, d.get("operador_nome"))
+        if not operador:
+            return jsonify(error="nome de quem solicita é obrigatório"), 400
+        if urgencia not in URGENCIAS:
+            return jsonify(error="urgência inválida"), 400
         if tipo_veiculo not in TIPOS_VEICULO:
             return jsonify(error="tipo de veículo obrigatório"), 400
         if not destino_id or int(destino_id) == origem_id:
             return jsonify(error="destino inválido"), 400
+        tipo = _resolver_tipo_pedido(con, origem_id, d.get("tipo"), d.get("tipo_outro"))
+        if not tipo:
+            return jsonify(error="tipo de coleta inválido"), 400
         cur = con.execute(
             "INSERT INTO pedidos(origem_id,destino_id,tipo,urgencia,tipo_veiculo,sla_limite_min,"
-            "status,criado_por,ts_solicitado) VALUES(?,?,?,?,?,?, 'solicitado', ?, ?)",
+            "status,criado_por,operador_id,ts_solicitado) VALUES(?,?,?,?,?,?, 'solicitado', ?, ?, ?)",
             (
                 origem_id,
                 destino_id,
@@ -586,13 +1163,16 @@ def api_pedidos():
                 tipo_veiculo,
                 _sla_limite_min(urgencia),
                 session["desp_uid"],
+                operador["id"],
                 agora_ms(),
             ),
         )
         pid = cur.lastrowid
         con.execute("UPDATE pedidos SET protocolo=? WHERE id=?", (_protocolo(pid), pid))
+        pedido = _pedido_ou_404(con, pid)
+        _notificar_admin_novo_pedido(con, pedido)
         con.commit()
-        return jsonify(linha_pedido(con, _pedido_ou_404(con, pid)))
+        return jsonify(linha_pedido(con, pedido))
 
     if papel == "admin":
         rows = con.execute("SELECT * FROM pedidos ORDER BY id DESC").fetchall()
@@ -627,7 +1207,9 @@ def api_despachar(pid):
         return jsonify(error="entregador inválido"), 400
     if not e["disponivel"] or _entregador_ocupado(con, entregador_id):
         return jsonify(error="entregador indisponível ou em outra entrega"), 400
-    if (e["tipo_veiculo"] or "").lower() != (r["tipo_veiculo"] or "moto").lower():
+    if _normalizar_veiculo(e["tipo_veiculo"], "moto") != _normalizar_veiculo(
+        r["tipo_veiculo"], "moto"
+    ):
         return jsonify(error="entregador incompatível com o veículo solicitado"), 400
     agora = agora_ms()
     con.execute(
@@ -636,8 +1218,10 @@ def api_despachar(pid):
         (entregador_id, agora, pid),
     )
     con.execute("UPDATE usuarios SET disponivel=0 WHERE id=?", (entregador_id,))
+    pedido = _pedido_ou_404(con, pid)
+    _notificar_despacho(con, pedido)
     con.commit()
-    return jsonify(linha_pedido(con, _pedido_ou_404(con, pid)))
+    return jsonify(linha_pedido(con, pedido))
 
 
 @despacho_bp.route("/api/pedidos/<int:pid>/aceitar", methods=["POST"])
@@ -655,8 +1239,10 @@ def api_aceitar(pid):
         "UPDATE pedidos SET status='em_rota_retirada', ts_aceito_entregador=? WHERE id=?",
         (agora_ms(), pid),
     )
+    pedido = _pedido_ou_404(con, pid)
+    _notificar_entregador_a_caminho(con, pedido)
     con.commit()
-    return jsonify(linha_pedido(con, _pedido_ou_404(con, pid)))
+    return jsonify(linha_pedido(con, pedido))
 
 
 @despacho_bp.route("/api/pedidos/<int:pid>/retirada", methods=["POST"])
@@ -675,8 +1261,10 @@ def api_retirada(pid):
         "UPDATE pedidos SET status='despachado', ts_coletado=?, ts_despachado=? WHERE id=?",
         (agora, agora, pid),
     )
+    pedido = _pedido_ou_404(con, pid)
+    _notificar_retirada(con, pedido)
     con.commit()
-    return jsonify(linha_pedido(con, _pedido_ou_404(con, pid)))
+    return jsonify(linha_pedido(con, pedido))
 
 
 @despacho_bp.route("/api/pedidos/<int:pid>/entrega", methods=["POST"])
@@ -702,8 +1290,10 @@ def api_entrega(pid):
         (agora, justificativa or None, pid),
     )
     con.execute("UPDATE usuarios SET disponivel=1 WHERE id=?", (session["desp_uid"],))
+    pedido = _pedido_ou_404(con, pid)
+    _notificar_entrega(con, pedido)
     con.commit()
-    return jsonify(linha_pedido(con, _pedido_ou_404(con, pid)))
+    return jsonify(linha_pedido(con, pedido))
 
 
 @despacho_bp.route("/api/pedidos/<int:pid>/localizacoes", methods=["GET", "POST"])
@@ -845,6 +1435,37 @@ def api_relatorio_inconformidades():
     return jsonify(inconformidades)
 
 
+@despacho_bp.route("/api/chat/resumo")
+@login_required_desp("admin")
+def api_chat_resumo():
+    con = get_db_desp()
+    rows = con.execute(
+        """
+        SELECT c.unidade_id, un.nome AS unidade,
+               COUNT(*) AS total,
+               SUM(CASE WHEN c.remetente_papel != 'admin' THEN 1 ELSE 0 END) AS recebidas,
+               MAX(c.ts) AS ultimo_ts
+        FROM chat_mensagens c
+        LEFT JOIN unidades un ON un.id = c.unidade_id
+        WHERE c.unidade_id IS NOT NULL
+        GROUP BY c.unidade_id, un.nome
+        ORDER BY ultimo_ts DESC, unidade COLLATE NOCASE
+        """
+    ).fetchall()
+    return jsonify(
+        [
+            {
+                "unidade_id": row["unidade_id"],
+                "unidade": row["unidade"] or "Unidade",
+                "total": int(row["total"] or 0),
+                "recebidas": int(row["recebidas"] or 0),
+                "ultimo_ts": row["ultimo_ts"],
+            }
+            for row in rows
+        ]
+    )
+
+
 @despacho_bp.route("/api/chat", methods=["GET", "POST"])
 @login_required_desp("admin", "solicitante")
 def api_chat():
@@ -858,27 +1479,52 @@ def api_chat():
             return jsonify(error="mensagem vazia"), 400
         if papel == "solicitante":
             solicitante_id = session["desp_uid"]
+            unidade_id = session["desp_unidade_id"]
         else:
+            unidade_id = d.get("unidade_id")
             solicitante_id = d.get("solicitante_id")
+            if not unidade_id and solicitante_id:
+                solicitante_ref = con.execute(
+                    """
+                    SELECT unidade_id
+                    FROM usuarios
+                    WHERE id=? AND papel='solicitante' AND ativo=1
+                    """,
+                    (solicitante_id,),
+                ).fetchone()
+                if solicitante_ref:
+                    unidade_id = solicitante_ref["unidade_id"]
+
+            unidade = con.execute("SELECT id FROM unidades WHERE id=?", (unidade_id,)).fetchone()
+            if not unidade:
+                return jsonify(error="unidade inválida"), 400
+
             solicitante = con.execute(
-                "SELECT 1 FROM usuarios WHERE id=? AND papel='solicitante' AND ativo=1",
-                (solicitante_id,),
+                """
+                SELECT id
+                FROM usuarios
+                WHERE unidade_id=? AND papel='solicitante' AND ativo=1
+                ORDER BY id
+                LIMIT 1
+                """,
+                (unidade_id,),
             ).fetchone()
             if not solicitante:
-                return jsonify(error="solicitante inválido"), 400
+                return jsonify(error="unidade sem solicitante ativo"), 400
+            solicitante_id = solicitante["id"]
         cur = con.execute(
-            "INSERT INTO chat_mensagens(solicitante_id,remetente_id,remetente_papel,texto,ts) "
-            "VALUES(?,?,?,?,?)",
-            (solicitante_id, session["desp_uid"], papel, texto, agora_ms()),
+            "INSERT INTO chat_mensagens(solicitante_id,unidade_id,remetente_id,remetente_papel,texto,ts) "
+            "VALUES(?,?,?,?,?,?)",
+            (solicitante_id, unidade_id, session["desp_uid"], papel, texto, agora_ms()),
         )
+        _notificar_chat(con, papel, unidade_id, texto)
         con.commit()
         row = con.execute(
             """
             SELECT c.*, u.nome AS remetente_nome, un.nome AS unidade
             FROM chat_mensagens c
             JOIN usuarios u ON u.id = c.remetente_id
-            LEFT JOIN usuarios sol ON sol.id = c.solicitante_id
-            LEFT JOIN unidades un ON un.id = sol.unidade_id
+            LEFT JOIN unidades un ON un.id = c.unidade_id
             WHERE c.id=?
             """,
             (cur.lastrowid,),
@@ -888,19 +1534,30 @@ def api_chat():
     params = []
     where = []
     if papel == "solicitante":
-        where.append("c.solicitante_id=?")
-        params.append(session["desp_uid"])
+        where.append("c.unidade_id=?")
+        params.append(session["desp_unidade_id"])
+    elif request.args.get("unidade_id"):
+        where.append("c.unidade_id=?")
+        params.append(request.args.get("unidade_id"))
     elif request.args.get("solicitante_id"):
-        where.append("c.solicitante_id=?")
-        params.append(request.args.get("solicitante_id"))
+        solicitante_ref = con.execute(
+            """
+            SELECT unidade_id
+            FROM usuarios
+            WHERE id=? AND papel='solicitante' AND ativo=1
+            """,
+            (request.args.get("solicitante_id"),),
+        ).fetchone()
+        if solicitante_ref:
+            where.append("c.unidade_id=?")
+            params.append(solicitante_ref["unidade_id"])
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     rows = con.execute(
         f"""
         SELECT c.*, u.nome AS remetente_nome, un.nome AS unidade
         FROM chat_mensagens c
         JOIN usuarios u ON u.id = c.remetente_id
-        LEFT JOIN usuarios sol ON sol.id = c.solicitante_id
-        LEFT JOIN unidades un ON un.id = sol.unidade_id
+        LEFT JOIN unidades un ON un.id = c.unidade_id
         {where_sql}
         ORDER BY c.ts, c.id
         """,

@@ -1,0 +1,160 @@
+<style>
+  .notification-actions{display:flex;align-items:center;gap:8px}
+  .notification-area{position:relative;display:inline-flex;align-items:center}
+  .notification-button{position:relative;border:none;background:rgba(255,255,255,.14);color:#fff;border-radius:10px;padding:8px 11px;font-size:15px;line-height:1;cursor:pointer}
+  .notification-button:hover{background:rgba(255,255,255,.22)}
+  .notification-badge{position:absolute;right:-5px;top:-7px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e53935;color:#fff;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid var(--primary)}
+  .notification-panel{position:absolute;right:0;top:42px;width:min(360px,92vw);background:#fff;color:var(--ink);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 42px rgba(12,45,26,.18);z-index:100;padding:10px}
+  .notification-panel.hidden,.notification-badge.hidden,.notification-pop.hidden{display:none!important}
+  .notification-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 2px 9px;border-bottom:1px solid var(--border);margin-bottom:8px}
+  .notification-head strong{font-size:13px}
+  .notification-head button{border:1px solid var(--border);background:var(--surface-2);color:var(--primary);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:800;cursor:pointer}
+  .notification-list{display:flex;flex-direction:column;gap:7px;max-height:370px;overflow:auto}
+  .notification-item{border:1px solid var(--border);background:var(--surface-2);border-radius:10px;padding:10px;text-align:left;cursor:pointer}
+  .notification-item.unread{background:#f0fff8;border-color:#b6dfc5}
+  .notification-item b{display:block;font-size:12px;margin-bottom:4px;color:var(--ink)}
+  .notification-item span{display:block;font-size:11px;color:var(--muted);line-height:1.35}
+  .notification-item small{display:block;font-size:10px;color:var(--muted-2);margin-top:6px}
+  .notification-empty{font-size:12px;color:var(--muted-2);text-align:center;border:1px dashed var(--border);border-radius:10px;padding:18px}
+  .notification-pop{position:fixed;right:22px;bottom:22px;width:min(330px,90vw);background:#fff;color:var(--ink);border:1px solid #b6dfc5;border-left:5px solid var(--primary);border-radius:14px;box-shadow:0 16px 36px rgba(12,45,26,.18);z-index:120;padding:13px 14px;animation:notifIn .18s ease-out}
+  .notification-pop strong{display:block;font-size:13px;margin-bottom:4px}
+  .notification-pop span{display:block;font-size:12px;color:var(--muted);line-height:1.35}
+  @keyframes notifIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+<div class="notification-area">
+  <button class="notification-button" id="notifButton" type="button" aria-label="Notificações">🔔
+    <span class="notification-badge hidden" id="notifBadge">0</span>
+  </button>
+  <div class="notification-panel hidden" id="notifPanel">
+    <div class="notification-head">
+      <strong>Notificações</strong>
+      <button type="button" id="notifRefresh">Atualizar</button>
+    </div>
+    <div class="notification-list" id="notifList">
+      <div class="notification-empty">Carregando...</div>
+    </div>
+  </div>
+</div>
+<div class="notification-pop hidden" id="notifPop">
+  <strong id="notifPopTitle"></strong>
+  <span id="notifPopText"></span>
+</div>
+
+<script>
+(() => {
+  const notifEls = {
+    button: document.getElementById('notifButton'),
+    badge: document.getElementById('notifBadge'),
+    panel: document.getElementById('notifPanel'),
+    refresh: document.getElementById('notifRefresh'),
+    list: document.getElementById('notifList'),
+    pop: document.getElementById('notifPop'),
+    popTitle: document.getElementById('notifPopTitle'),
+    popText: document.getElementById('notifPopText')
+  };
+  if (!notifEls.button) return;
+
+  let notifKnown = new Set();
+  let notifFirstLoad = true;
+  let notifPopTimer = null;
+
+  const notifEscape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[ch]));
+
+  const notifFmt = ts => {
+    if (!ts) return '';
+    try {
+      return new Intl.DateTimeFormat('pt-BR', {
+        day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'
+      }).format(new Date(ts));
+    } catch (_err) {
+      return '';
+    }
+  };
+
+  async function notifApi(path, options) {
+    const resp = await fetch(path, options);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Falha ao carregar notificações');
+    return data;
+  }
+
+  function notifToast(item) {
+    notifEls.popTitle.textContent = item.titulo || 'Nova notificação';
+    notifEls.popText.textContent = item.mensagem || '';
+    notifEls.pop.classList.remove('hidden');
+    clearTimeout(notifPopTimer);
+    notifPopTimer = setTimeout(() => notifEls.pop.classList.add('hidden'), 5200);
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(item.titulo || 'Nova notificação', {
+        body: item.mensagem || '',
+        tag: `despacho-${item.id}`
+      });
+    }
+  }
+
+  function notifRender(data) {
+    const unread = Number(data.nao_lidas || 0);
+    notifEls.badge.textContent = unread > 99 ? '99+' : String(unread);
+    notifEls.badge.classList.toggle('hidden', unread < 1);
+
+    const items = data.notificacoes || [];
+    if (!items.length) {
+      notifEls.list.innerHTML = '<div class="notification-empty">Nenhuma notificação por enquanto.</div>';
+    } else {
+      notifEls.list.innerHTML = items.map(item => `
+        <button class="notification-item ${item.lida ? '' : 'unread'}" type="button" data-id="${item.id}">
+          <b>${notifEscape(item.titulo)}</b>
+          <span>${notifEscape(item.mensagem)}</span>
+          <small>${notifEscape(item.protocolo || '')}${item.protocolo ? ' · ' : ''}${notifFmt(item.criado_em)}</small>
+        </button>
+      `).join('');
+    }
+
+    const fresh = items.filter(item => !item.lida && !notifKnown.has(item.id));
+    items.forEach(item => notifKnown.add(item.id));
+    if (!notifFirstLoad && fresh.length) notifToast(fresh[0]);
+    notifFirstLoad = false;
+  }
+
+  async function notifLoad() {
+    try {
+      const data = await notifApi('/despacho/api/notificacoes');
+      notifRender(data);
+    } catch (_err) {
+      notifEls.list.innerHTML = '<div class="notification-empty">Não foi possível carregar agora.</div>';
+    }
+  }
+
+  notifEls.button.addEventListener('click', () => {
+    notifEls.panel.classList.toggle('hidden');
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+    notifLoad();
+  });
+
+  notifEls.refresh.addEventListener('click', notifLoad);
+
+  notifEls.list.addEventListener('click', async event => {
+    const item = event.target.closest('.notification-item');
+    if (!item) return;
+    try {
+      await notifApi(`/despacho/api/notificacoes/${item.dataset.id}/lida`, {method:'POST'});
+      await notifLoad();
+    } catch (_err) {}
+  });
+
+  document.addEventListener('click', event => {
+    if (!notifEls.panel.classList.contains('hidden') && !event.target.closest('.notification-area')) {
+      notifEls.panel.classList.add('hidden');
+    }
+  });
+
+  notifLoad();
+  setInterval(notifLoad, 6000);
+})();
+</script>

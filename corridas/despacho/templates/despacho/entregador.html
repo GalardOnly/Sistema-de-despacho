@@ -8,12 +8,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
-    --primary:#16803a;--primary-dark:#0f5d2a;--green-bg:#e6f6ec;--green-ink:#177a41;
+    --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
     --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Inter,sans-serif;background:var(--bg);color:var(--ink)}
   .mono{font-family:'IBM Plex Mono',monospace}
-  header{background:linear-gradient(135deg,var(--primary),#25a85a);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  header{background:var(--primary);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
   header h1{font-size:17px}.sub{font-size:12px;color:rgba(255,255,255,.78);margin-top:3px}header a{color:#fff;text-decoration:none;background:rgba(255,255,255,.12);border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:700}
   .wrap{max-width:620px;margin:0 auto;padding:20px 18px 70px}
   .card,.item{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:13px;box-shadow:0 8px 22px rgba(15,93,42,.04)}
@@ -22,7 +22,7 @@
   .item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.proto{font-weight:800;font-size:14px}.route{font-size:13px;color:var(--muted);line-height:1.4;margin-bottom:10px}
   .tag,.status{font-size:9.8px;font-weight:800;letter-spacing:.25px;padding:4px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;margin-right:4px}.tag.rotina{background:var(--blue-bg);color:var(--blue-ink)}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink)}.tag.emergencia{background:var(--red-bg);color:var(--red-ink)}.tag.vehicle{background:var(--green-bg);color:var(--green-ink)}
   .status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink)}.status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink)}
-  .act{width:100%;color:#fff;background:var(--primary);font-size:13.5px}.act.accept{background:#9a5b00}.act.deliver{background:#177a41}.act:hover,.primary:hover{filter:brightness(.95)}
+  .act{width:100%;color:#fff;background:var(--primary);font-size:13.5px}.act.accept{background:#9a5b00}.act.deliver{background:#007f52}.act:hover,.primary:hover{filter:brightness(.95)}
   .gps,.meta{font-size:11px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 10px;margin:10px 0;line-height:1.45}.meta strong{color:var(--ink)}
   .field{margin-bottom:10px}.field label{display:block;font-size:11px;font-weight:800;color:var(--muted);margin-bottom:5px}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13px Inter;color:var(--ink)}
   .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:9px;padding:11px;font-weight:800;cursor:pointer}
@@ -33,7 +33,10 @@
 <body>
 <header>
   <div><h1>Despacho de Coletas</h1><div class="sub">Entregador · {{ nome }}</div></div>
-  <a href="/despacho/logout">Sair</a>
+  <div class="notification-actions">
+    {% include "despacho/_notificacoes.html" %}
+    <a href="/despacho/logout">Sair</a>
+  </div>
 </header>
 
 <div class="wrap">
@@ -53,16 +56,25 @@
 <script>
 const $ = id => document.getElementById(id);
 let toastTimer, disponibilidadeAtual=false, ocupado=false, trackingPedidoId=null, trackingTimer=null;
+let rascunhosJustificativa = {};
 const STATUS_GPS = ['em_rota_retirada','em_rota','despachado','coletado'];
 const URG_LABELS = {rotina:'ROTINA (12 horas)', urgente:'URGENTE (40 min)', emergencia:'EMERGÊNCIA (15 min)'};
 
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#16803a';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,opt);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
 function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
 function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
 function labelStatus(s){return {aguardando_entregador:'AGUARDANDO ACEITE',em_rota_retirada:'A CAMINHO DA RETIRADA',em_rota:'A CAMINHO DA RETIRADA',despachado:'DESPACHADO / EM ENTREGA',coletado:'DESPACHADO / EM ENTREGA'}[s]||s;}
 function slaLinha(p){return p.sla?.atrasado?`SLA excedido: ${fmtDur(p.sla.excedido_ms)}. Justificativa de atraso obrigatória na entrega.`:`SLA: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function salvarRascunhosJustificativa(){
+  document.querySelectorAll('[data-justificativa-atraso]').forEach(campo=>{
+    rascunhosJustificativa[campo.dataset.justificativaAtraso]=campo.value;
+  });
+}
+function justificativaRascunho(pid){
+  return rascunhosJustificativa[pid] || '';
+}
 
 async function carregarDisponibilidade(){
   const d=await api('/despacho/api/disponibilidade');
@@ -118,7 +130,7 @@ function cardPedido(p){
     <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span><span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
     <div class="meta">${slaLinha(p)}</div>
     ${STATUS_GPS.includes(p.status)?'<div class="gps" id="gpsStatus">GPS ativo · atualizações a cada 15 segundos</div>':''}
-    ${p.status==='despachado'&&atrasado?`<div class="field"><label>justificativa_atraso</label><textarea id="justificativa-atraso-${p.id}" rows="3" placeholder="Justificativa de atraso obrigatória..."></textarea></div>`:''}
+    ${p.status==='despachado'&&atrasado?`<div class="field"><label>Justificativa de atraso</label><textarea id="justificativa-atraso-${p.id}" data-justificativa-atraso="${p.id}" rows="3" placeholder="Justificativa de atraso obrigatória...">${escapeHtml(justificativaRascunho(p.id))}</textarea></div>`:''}
     ${p.status==='aguardando_entregador'
       ? `<button class="act accept" data-aceitar="${p.id}">Aceitar pedido e iniciar rota</button>`
       : p.status==='em_rota_retirada'||p.status==='em_rota'
@@ -130,10 +142,17 @@ function cardPedido(p){
 async function renderLista(){
   const pedidos=await api('/despacho/api/pedidos');
   const list=$('lista');
+  salvarRascunhosJustificativa();
   if(!pedidos.length){list.innerHTML='<div class="empty">Nenhuma coleta atribuída a você no momento.</div>';sincronizarRastreamento([]);return;}
   list.innerHTML=pedidos.map(cardPedido).join('');
   sincronizarRastreamento(pedidos);
 }
+
+document.addEventListener('input', e=>{
+  if(e.target.dataset.justificativaAtraso){
+    rascunhosJustificativa[e.target.dataset.justificativaAtraso]=e.target.value;
+  }
+});
 
 document.addEventListener('click', async e=>{
   const ac=e.target.dataset.aceitar, r=e.target.dataset.retirada, en=e.target.dataset.entrega;
@@ -144,6 +163,7 @@ document.addEventListener('click', async e=>{
       const campo=$(`justificativa-atraso-${en}`);
       const body=campo?{justificativa_atraso:campo.value.trim()}:{};
       await api(`/despacho/api/pedidos/${en}/entrega`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      delete rascunhosJustificativa[en];
       toast('Entrega confirmada');pararRastreamento();await renderLista();await carregarDisponibilidade();
     }
   }catch(err){toast(err.message,'danger');}

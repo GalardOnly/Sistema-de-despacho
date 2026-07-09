@@ -9,22 +9,27 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
-    --primary:#16803a;--primary-dark:#0f5d2a;--green-bg:#e6f6ec;--green-ink:#177a41;
+    --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
     --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Inter,sans-serif;background:var(--bg);color:var(--ink)}
   .mono{font-family:'IBM Plex Mono',monospace}
-  header{background:linear-gradient(135deg,var(--primary),#25a85a);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
-  header h1{font-size:18px}.sub{font-size:12px;color:rgba(255,255,255,.78);margin-top:3px}.logo-space{font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:rgba(255,255,255,.78);margin-right:auto;margin-left:16px}
+  header{background:var(--primary);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;position:relative;min-height:86px}
+  header h1{font-size:18px}.sub{font-size:12px;color:rgba(255,255,255,.78);margin-top:3px}
+  header .brand-logo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;pointer-events:none}
+  header .brand-logo img{width:116px;height:auto;display:block;border-radius:4px}
   header a{color:#fff;text-decoration:none;background:rgba(255,255,255,.12);border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:700}
   .wrap{max-width:980px;margin:0 auto;padding:24px 28px 70px}
+  .hidden{display:none!important}
   .grid2{display:grid;grid-template-columns:1.05fr .95fr;gap:18px}@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  @media(max-width:760px){header .brand-logo img{width:86px}header{padding-right:18px;padding-left:18px}}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 8px 22px rgba(15,93,42,.04)}
   .card h2{font-size:15px;margin-bottom:14px}
-  .field{margin-bottom:12px}.field label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:6px}.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13.5px Inter;color:var(--ink)}
+  .field{margin-bottom:12px}.field label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:6px}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13.5px Inter;color:var(--ink)}
   .choice-row{display:flex;gap:7px;margin-bottom:16px}.choice-row button{flex:1;border:1px solid var(--border);background:#fff;color:var(--muted);font-weight:800;font-size:11px;padding:10px 7px;border-radius:9px;cursor:pointer}
   .choice-row button.on{border-color:var(--primary);box-shadow:0 0 0 2px rgba(22,128,58,.12)}.choice-row button.on.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#b7cdf6}.choice-row button.on.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#efd198}.choice-row button.on.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#efb6b1}.choice-row button.on.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#b6dfc5}
   .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:9px;padding:12px;font-weight:800;font-size:14px;cursor:pointer}.primary:hover{background:var(--primary-dark)}
+  .secondary{width:100%;border:1px solid var(--border);background:#fff;color:var(--primary);border-radius:9px;padding:10px 11px;font-weight:800;font-size:12px;cursor:pointer}.secondary:hover{border-color:var(--primary);background:var(--green-bg)}.link-button{border:none;background:transparent;color:var(--primary);font-weight:800;cursor:pointer}
   .rowlist{display:flex;flex-direction:column;gap:9px}.item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:13px}.item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.proto{font-weight:800;font-size:13px}.route{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4}
   .tag,.status{font-size:9.8px;font-weight:800;letter-spacing:.25px;padding:4px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;margin-right:4px}.tag.tipo{background:var(--slate-bg);color:var(--slate-ink)}.tag.vehicle{background:var(--green-bg);color:var(--green-ink)}.tag.rotina{background:var(--blue-bg);color:var(--blue-ink)}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink)}.tag.emergencia{background:var(--red-bg);color:var(--red-ink)}
   .status.solicitado{background:var(--slate-bg);color:var(--slate-ink)}.status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink)}.status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink)}.status.entregue{background:var(--green-bg);color:var(--green-ink)}.status.cancelado{background:var(--red-bg);color:var(--red-ink)}
@@ -38,8 +43,13 @@
 <body>
 <header>
   <div><h1>Sistema de Despacho de Coletas</h1><div class="sub">Solicitante · {{ unidade }}</div></div>
-  <div class="logo-space">Área da logo</div>
-  <a href="/despacho/logout">Sair</a>
+  <div class="brand-logo">
+    <img src="/static/img/unimed.png" alt="Unimed">
+  </div>
+  <div class="notification-actions">
+    {% include "despacho/_notificacoes.html" %}
+    <a href="/despacho/logout">Sair</a>
+  </div>
 </header>
 
 <div class="wrap">
@@ -47,8 +57,16 @@
     <div>
       <div class="card">
         <h2>Nova coleta</h2>
+        <div class="field">
+          <label>Nome de quem está solicitando</label>
+          <input id="operadorNome" autocomplete="off" placeholder="Digite seu nome" required>
+        </div>
         <div class="field"><label>Destino</label><select id="selDestino"></select></div>
         <div class="field"><label>Tipo de exame</label><select id="selTipo"></select></div>
+        <div class="field hidden" id="tipoOutroBox">
+          <label>Nome do que será coletado</label>
+          <input id="tipoOutro" autocomplete="off" placeholder="Digite o tipo de coleta">
+        </div>
         <label class="field-label" style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Veículo necessário</label>
         <div class="choice-row" id="veiculoRow">
           <button class="on vehicle" data-vehicle="moto">Moto</button>
@@ -78,9 +96,9 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const TIPOS = ["Sangue","Urina","Gasometria","Microbiologia/Cultura","Anatomia patológica","Outro"];
 const URGENCIAS = [{id:"rotina",label:"ROTINA (12 horas)"},{id:"urgente",label:"URGENTE (40 min)"},{id:"emergencia",label:"EMERGÊNCIA (15 min)"}];
 const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];
+let tiposColeta = [];
 let urgenciaSelecionada = "rotina";
 let veiculoSelecionado = "moto";
 const minhaUnidade = "{{ unidade }}";
@@ -93,14 +111,28 @@ function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/
 function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
 function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'ENTREGADOR ACIONADO',em_rota_retirada:'ENTREGADOR A CAMINHO',em_rota:'ENTREGADOR A CAMINHO',despachado:'EXAME RETIRADO / EM ENTREGA',coletado:'EXAME RETIRADO',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
 function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#16803a';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,opt);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
 
 function setupForm(){
-  $('selTipo').innerHTML = TIPOS.map(t=>`<option value="${t}">${t}</option>`).join('');
   $('urgRow').innerHTML = URGENCIAS.map(u=>`<button class="${u.id===urgenciaSelecionada?'on '+u.id:''}" data-urg="${u.id}">${u.label}</button>`).join('');
 }
+function renderTiposColeta(valorPreferido){
+  $('selTipo').innerHTML = tiposColeta.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  if(valorPreferido && tiposColeta.includes(valorPreferido)) $('selTipo').value = valorPreferido;
+  atualizarTipoOutro();
+}
+async function carregarTiposColeta(valorPreferido){
+  tiposColeta = await api('/despacho/api/tipos-exame');
+  renderTiposColeta(valorPreferido);
+}
+function atualizarTipoOutro(){
+  const outro = $('selTipo').value === 'Outro';
+  $('tipoOutroBox').classList.toggle('hidden', !outro);
+  if(!outro) $('tipoOutro').value = '';
+}
 $('urgRow').addEventListener('click', e=>{const u=e.target.dataset.urg;if(!u)return;urgenciaSelecionada=u;setupForm();});
+$('selTipo').addEventListener('change', atualizarTipoOutro);
 $('veiculoRow').addEventListener('click', e=>{
   const v=e.target.dataset.vehicle;if(!v)return;veiculoSelecionado=v;
   document.querySelectorAll('#veiculoRow button').forEach(b=>b.classList.toggle('on',b.dataset.vehicle===v));
@@ -112,8 +144,18 @@ async function carregarDestinos(){
 }
 
 $('btnSolicitar').addEventListener('click', async () => {
-  const body = {destino_id:parseInt($('selDestino').value),tipo:$('selTipo').value,urgencia:urgenciaSelecionada,tipo_veiculo:veiculoSelecionado};
-  try{await api('/despacho/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});toast('Pedido solicitado');renderLista();}
+  const operadorNome = $('operadorNome').value.trim();
+  if(!operadorNome){toast('Informe seu nome antes de solicitar','danger');return;}
+  const tipoSelecionado = $('selTipo').value;
+  const tipoOutro = $('tipoOutro').value.trim();
+  if(tipoSelecionado === 'Outro' && !tipoOutro){toast('Informe o nome do que será coletado','danger');return;}
+  const body = {destino_id:parseInt($('selDestino').value),tipo:tipoSelecionado,tipo_outro:tipoOutro,urgencia:urgenciaSelecionada,tipo_veiculo:veiculoSelecionado,operador_nome:operadorNome};
+  try{
+    const pedido = await api('/despacho/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('Pedido solicitado');
+    await carregarTiposColeta(pedido.tipo);
+    renderLista();
+  }
   catch(e){toast(e.message,'danger');}
 });
 
@@ -127,6 +169,7 @@ async function renderLista(){
       <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
       <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)}</div>
       <div><span class="tag tipo">${escapeHtml(p.tipo)}</span><span class="tag ${p.urgencia}">${escapeHtml(p.urgencia_label)}</span><span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
+      <div class="meta"><span><strong>Solicitado por</strong> ${p.operador_nome?escapeHtml(p.operador_nome):'cadastro antigo não informado'}</span></div>
       <div class="public-times"><span><strong>Solicitado às</strong> ${fmtHora(p.ts.solicitado)}</span><span><strong>Entregue às</strong> ${fmtHora(p.ts.entregue)}</span><span>${slaLinha(p)}</span></div>
       ${STATUS_MAPA.includes(p.status)?`<div class="map" id="map-${p.id}"></div><div class="map-meta" id="map-meta-${p.id}">Aguardando localização...</div>`:''}
       ${p.status==='solicitado' && p.origem===minhaUnidade?`<button class="chip-cancel" data-cancel="${p.id}">Cancelar pedido</button>`:''}
@@ -142,7 +185,7 @@ async function atualizarMapa(p){
   mapas.set(p.id,mapa);
   if(!pontos.length){$('map-meta-'+p.id).textContent='Entregador em rota; aguardando primeira posição.';return;}
   const coords=pontos.map(x=>[x.latitude,x.longitude]);
-  L.polyline(coords,{color:'#16803a',weight:4}).addTo(mapa); L.marker(coords[coords.length-1]).addTo(mapa);
+  L.polyline(coords,{color:'#009962',weight:4}).addTo(mapa); L.marker(coords[coords.length-1]).addTo(mapa);
   mapa.fitBounds(coords.length>1?coords:L.latLngBounds(coords[0],coords[0]).pad(.08));
   $('map-meta-'+p.id).textContent=`Última posição: ${fmtHora(pontos[pontos.length-1].ts)}`;
   setTimeout(()=>mapa.invalidateSize(),0);
@@ -161,7 +204,7 @@ async function carregarChat(){
 }
 $('btnEnviarChat').onclick=async()=>{const texto=$('chatTexto').value.trim();if(!texto)return;try{await api('/despacho/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto})});$('chatTexto').value='';await carregarChat();}catch(e){toast(e.message,'danger');}};
 
-async function init(){setupForm();await carregarDestinos();await renderLista();await carregarChat();}
+async function init(){setupForm();await carregarTiposColeta();await carregarDestinos();await renderLista();await carregarChat();}
 init();
 setInterval(renderLista,15000);
 setInterval(carregarChat,6000);
