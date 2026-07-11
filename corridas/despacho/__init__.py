@@ -15,6 +15,11 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
+if "." in (__package__ or ""):
+    from ..security import limitar_falhas_login
+else:
+    from security import limitar_falhas_login
+
 
 TZ = ZoneInfo("America/Sao_Paulo")
 DESP_DB_PATH = os.environ.get(
@@ -89,6 +94,12 @@ def get_db_desp():
         g.db_desp = sqlite3.connect(DESP_DB_PATH)
         g.db_desp.row_factory = sqlite3.Row
     return g.db_desp
+
+
+def verificar_db_desp():
+    con = get_db_desp()
+    con.execute("SELECT 1").fetchone()
+    return True
 
 
 @despacho_bp.teardown_app_request
@@ -826,6 +837,7 @@ def proteger_api_contra_csrf():
 
 
 @despacho_bp.route("/login", methods=["GET", "POST"])
+@limitar_falhas_login
 def desp_login():
     erro = None
     if request.method == "POST":
@@ -836,12 +848,14 @@ def desp_login():
         if not u or not check_password_hash(u["senha_hash"], senha):
             erro = "Usuário ou senha incorretos."
         else:
+            session.clear()
             session["desp_uid"] = u["id"]
             session["desp_nome"] = u["nome"]
             session["desp_papel"] = u["papel"]
             session["desp_unidade_id"] = u["unidade_id"]
             session[CSRF_SESSION_KEY] = secrets.token_urlsafe(32)
             return redirect(url_for("despacho.desp_home"))
+        return render_template("despacho/login.html", erro=erro), 401
     return render_template("despacho/login.html", erro=erro)
 
 

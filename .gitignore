@@ -17,6 +17,12 @@ ENV/
 *.crt
 *.pfx
 *.p12
+*service-account*.json
+*service_account*.json
+gcp-credentials*.json
+google-credentials*.json
+application_default_credentials.json
+.gcloud/
 
 # Bancos e arquivos gerados em runtime
 *.db

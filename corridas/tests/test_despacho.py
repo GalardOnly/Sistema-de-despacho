@@ -1035,6 +1035,19 @@ class DispatchApiTests(unittest.TestCase):
             "pedidos-scroll",
             "max-height:620px",
             "overflow-y:auto",
+            "module-tabs",
+            "data-module=\"solicitante\"",
+            "Cadastro de Pacientes",
+            "Sistema de Estoque",
+            "Fale com o administrador",
+            "floatingChatPanel",
+            "pacienteNome",
+            "CPF/cartão",
+            "pacientesMvpLista",
+            "estoqueResumo",
+            "estoqueTabela",
+            "Itens críticos",
+            "MVP visual",
         ):
             self.assertIn(expected, html)
         self.assertNotIn('id="selOperador"', html)

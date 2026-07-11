@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Falha temporária · Sistema de Despacho de Coletas</title>
+<style>
+  *{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#f3f8f5;color:#14251d;font-family:Arial,sans-serif;padding:24px}
+  main{width:min(520px,100%);background:#fff;border:1px solid #d6e4dc;border-radius:16px;padding:32px;box-shadow:0 16px 36px rgba(17,70,43,.08)}
+  h1{font-size:24px;margin:0 0 12px;color:#00995d}p{line-height:1.55;margin:8px 0}.ref{font-family:monospace;background:#eef7f2;border-radius:7px;padding:8px 10px;display:inline-block}
+  a{display:inline-block;margin-top:16px;background:#00995d;color:#fff;text-decoration:none;font-weight:700;padding:11px 16px;border-radius:9px}
+</style>
+</head>
+<body>
+  <main>
+    <h1>Não foi possível concluir a operação</h1>
+    <p>O sistema registrou a falha. Tente novamente em alguns instantes.</p>
+    <p>Se o problema continuar, informe esta referência ao suporte:</p>
+    <p class="ref">{{ request_id }}</p>
+    <br><a href="/despacho/">Voltar ao sistema</a>
+  </main>
+</body>
+</html>
