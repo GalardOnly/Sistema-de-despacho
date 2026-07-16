@@ -1,5 +1,6 @@
 import importlib
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -330,6 +331,28 @@ class AppEntrypointTests(unittest.TestCase):
         self.assertIn("Secure", cookie)
         self.assertIn("HttpOnly", cookie)
         self.assertIn("SameSite=Lax", cookie)
+
+        admin = self.client.get("/despacho/admin", base_url="https://localhost")
+        html = admin.get_data(as_text=True)
+        nonce = re.search(r'<style nonce="([^"]+)">', html).group(1)
+        csp = admin.headers["Content-Security-Policy"]
+        self.assertIn(f"script-src 'self' 'nonce-{nonce}'", csp)
+        self.assertIn(f"style-src 'self' 'nonce-{nonce}'", csp)
+        self.assertNotIn("script-src 'self' 'unsafe-inline'", csp)
+        self.assertNotIn("style-src 'self' 'unsafe-inline'", csp)
+        self.assertIn("script-src-attr 'none'", csp)
+        self.assertIn(
+            'integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="',
+            html,
+        )
+
+    def test_all_inline_script_and_style_blocks_have_nonce(self):
+        templates = CORRIDAS_DIR / "despacho" / "templates" / "despacho"
+        for path in templates.glob("*.html"):
+            source = path.read_text(encoding="utf-8")
+            for tag in re.findall(r"<(?:script|style)\b[^>]*>", source):
+                with self.subTest(template=path.name, tag=tag):
+                    self.assertIn('nonce="{{ g.csp_nonce }}"', tag)
 
     def test_login_error_is_generic_for_known_and_unknown_users(self):
         known = self.client.post(

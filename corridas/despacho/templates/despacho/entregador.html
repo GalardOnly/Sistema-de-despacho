@@ -6,7 +6,7 @@
 <title>Entregador · Sistema de Despacho de Coletas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<style>
+<style nonce="{{ g.csp_nonce }}">
   :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
     --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
     --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
@@ -53,7 +53,7 @@
 </div>
 <div class="toast" id="toast"><span id="toastTxt"></span></div>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const $ = id => document.getElementById(id);
 let toastTimer, disponibilidadeAtual=false, ocupado=false, trackingPedidoId=null, trackingTimer=null;
 let rascunhosJustificativa = {};

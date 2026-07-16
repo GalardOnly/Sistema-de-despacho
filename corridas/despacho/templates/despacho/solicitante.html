@@ -6,8 +6,8 @@
 <title>Solicitante · Sistema de Despacho de Coletas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style nonce="{{ g.csp_nonce }}">
   :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
     --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
     --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
@@ -174,8 +174,8 @@
 <button class="floating-chat" id="floatingChatButton" type="button">💬 Fale com o administrador</button>
 <div class="toast" id="toast"><span id="toastTxt"></span></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
+<script nonce="{{ g.csp_nonce }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script nonce="{{ g.csp_nonce }}">
 const $ = id => document.getElementById(id);
 const URGENCIAS = [{id:"rotina",label:"ROTINA (12 horas)"},{id:"urgente",label:"URGENTE (40 min)"},{id:"emergencia",label:"EMERGÊNCIA (15 min)"}];
 const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];

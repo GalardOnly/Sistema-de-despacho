@@ -321,14 +321,17 @@ def _aplicar_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(self)"
+    nonce = g.csp_nonce
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "base-uri 'self'; "
         "object-src 'none'; "
         "frame-ancestors 'none'; "
         "form-action 'self'; "
-        "script-src 'self' 'unsafe-inline' https://unpkg.com; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
+        f"script-src 'self' 'nonce-{nonce}' https://unpkg.com; "
+        "script-src-attr 'none'; "
+        f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com https://unpkg.com; "
+        "style-src-attr 'unsafe-inline'; "
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: https://unpkg.com https://*.tile.openstreetmap.org; "
         "connect-src 'self'"
@@ -352,6 +355,7 @@ def configurar_seguranca(app):
     @app.before_request
     def iniciar_contexto_requisicao():
         g.request_id = secrets.token_hex(12)
+        g.csp_nonce = secrets.token_urlsafe(24)
         g.request_started = time.perf_counter()
 
     @app.after_request
