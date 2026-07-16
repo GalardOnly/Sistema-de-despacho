@@ -331,7 +331,7 @@ def _aplicar_headers(response):
         f"script-src 'self' 'nonce-{nonce}' https://unpkg.com; "
         "script-src-attr 'none'; "
         f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com https://unpkg.com; "
-        "style-src-attr 'unsafe-inline'; "
+        "style-src-attr 'none'; "
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: https://unpkg.com https://*.tile.openstreetmap.org; "
         "connect-src 'self'"

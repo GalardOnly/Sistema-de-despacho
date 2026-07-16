@@ -7,6 +7,7 @@ from ..config import LIMITE_JUSTIFICATIVA, TIPOS_INDISPONIBILIDADE
 from ..database import get_db_desp
 from ..extensions import despacho_bp
 from ..pedidos.services import _entregador_ocupado, agora_ms
+from ..validation import dados_json, texto
 
 
 @despacho_bp.route("/api/disponibilidade", methods=["GET", "POST"])
@@ -16,15 +17,15 @@ def api_disponibilidade():
     uid = session["desp_uid"]
     ocupado = _entregador_ocupado(con, uid)
     if request.method == "POST":
-        d = request.get_json(silent=True) or {}
+        d = dados_json()
         valor = d.get("disponivel")
         if not isinstance(valor, bool):
             return jsonify(error="disponibilidade inválida"), 400
         if ocupado:
             return jsonify(error="não é possível alterar a disponibilidade durante uma entrega"), 400
         if valor is False:
-            justificativa = (d.get("justificativa") or "").strip()
-            tipo = (d.get("tipo") or "").strip()
+            justificativa = texto(d.get("justificativa")).strip()
+            tipo = texto(d.get("tipo")).strip()
             if not justificativa or tipo not in TIPOS_INDISPONIBILIDADE:
                 return jsonify(error="justificativa e tipo de indisponibilidade são obrigatórios"), 400
             if len(justificativa) > LIMITE_JUSTIFICATIVA:

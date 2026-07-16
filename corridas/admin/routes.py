@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash
 
 from ..auth.services import login_required_desp
 from ..config import (
+    LIMITE_CADASTROS_RETORNO,
     LIMITE_CODIGO_REFERENCIA,
     LIMITE_NOME,
     LIMITE_SENHA,
@@ -16,6 +17,13 @@ from ..database import ERROS_INTEGRIDADE, get_db_desp
 from ..database.dispatch import _normalizar_veiculo
 from ..extensions import despacho_bp
 from ..pedidos.services import _entregador_ocupado
+from ..pedidos.services import (
+    _inteiro_positivo,
+    _limite_consulta,
+    _parametro_consulta_positivo,
+    _resposta_paginada,
+)
+from ..validation import dados_json, texto
 
 
 @despacho_bp.route("/api/unidades", methods=["GET", "POST"])
@@ -25,7 +33,7 @@ def api_unidades():
     if request.method == "POST":
         if session["desp_papel"] != "admin":
             return jsonify(error="apenas administrador"), 403
-        nome = (request.get_json(force=True).get("nome") or "").strip()
+        nome = texto(dados_json().get("nome")).strip()
         if not nome:
             return jsonify(error="nome obrigatório"), 400
         if len(nome) > LIMITE_NOME:
@@ -35,8 +43,18 @@ def api_unidades():
             con.commit()
         except ERROS_INTEGRIDADE:
             return jsonify(error="unidade já cadastrada"), 400
-    rows = con.execute("SELECT id, nome FROM unidades ORDER BY nome").fetchall()
-    return jsonify([dict(r) for r in rows])
+    limite = _limite_consulta(LIMITE_CADASTROS_RETORNO, LIMITE_CADASTROS_RETORNO)
+    antes_id = _parametro_consulta_positivo("antes_id")
+    if antes_id:
+        rows = con.execute(
+            "SELECT id, nome FROM unidades WHERE id<? ORDER BY id DESC LIMIT ?",
+            (antes_id, limite + 1),
+        ).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT id, nome FROM unidades ORDER BY id DESC LIMIT ?", (limite + 1,)
+        ).fetchall()
+    return _resposta_paginada(rows, limite)
 
 
 @despacho_bp.route("/api/usuarios", methods=["GET", "POST"])
@@ -44,13 +62,13 @@ def api_unidades():
 def api_usuarios():
     con = get_db_desp()
     if request.method == "POST":
-        d = request.get_json(force=True)
-        nome = (d.get("nome") or "").strip()
-        username = (d.get("username") or "").strip()
-        senha = d.get("senha") or ""
+        d = dados_json()
+        nome = texto(d.get("nome")).strip()
+        username = texto(d.get("username")).strip()
+        senha = texto(d.get("senha"))
         papel = d.get("papel")
-        unidade_id = d.get("unidade_id")
-        codigo_ref = (d.get("codigo_ref") or "").strip()
+        unidade_id = _inteiro_positivo(d.get("unidade_id"))
+        codigo_ref = texto(d.get("codigo_ref")).strip()
         tipo_veiculo = _normalizar_veiculo(d.get("tipo_veiculo"))
 
         if not (nome and username and senha and papel in PAPEIS):
@@ -72,6 +90,12 @@ def api_usuarios():
                 return jsonify(error="código de referência já cadastrado"), 400
         if papel == "solicitante" and not unidade_id:
             return jsonify(error="solicitante precisa de uma unidade"), 400
+        if papel == "solicitante":
+            unidade = con.execute(
+                "SELECT id FROM unidades WHERE id=?", (unidade_id,)
+            ).fetchone()
+            if not unidade:
+                return jsonify(error="unidade inválida"), 400
         if papel == "entregador" and tipo_veiculo not in TIPOS_VEICULO:
             return jsonify(error="entregador precisa de tipo de veículo"), 400
         if papel != "solicitante":
@@ -97,6 +121,9 @@ def api_usuarios():
         except ERROS_INTEGRIDADE:
             return jsonify(error="username já existe"), 400
 
+    limite = _limite_consulta(LIMITE_CADASTROS_RETORNO, LIMITE_CADASTROS_RETORNO)
+    antes_id = _parametro_consulta_positivo("antes_id")
+    cursor = antes_id or 0
     rows = con.execute(
         """
         SELECT u.id, u.nome, u.username, u.papel, u.unidade_id,
@@ -110,10 +137,12 @@ def api_usuarios():
                ) THEN 1 ELSE 0 END AS ocupado
         FROM usuarios u LEFT JOIN unidades un ON un.id = u.unidade_id
         WHERE u.papel != 'admin' AND u.ativo = 1
-        ORDER BY u.papel, u.nome
-        """
+          AND (?=0 OR u.id<?)
+        ORDER BY u.id DESC LIMIT ?
+        """,
+        (cursor, cursor, limite + 1),
     ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    return _resposta_paginada(rows, limite)
 
 
 @despacho_bp.route("/api/usuarios/<int:uid>", methods=["PATCH", "DELETE"])
@@ -148,7 +177,7 @@ def api_usuario_admin(uid):
         con.commit()
         return jsonify(ok=True, id=uid)
 
-    d = request.get_json(silent=True) or {}
+    d = dados_json()
     tipo_veiculo = _normalizar_veiculo(d.get("tipo_veiculo"))
     if tipo_veiculo not in TIPOS_VEICULO:
         return jsonify(error="tipo de veículo inválido"), 400
@@ -167,6 +196,9 @@ def api_usuario_admin(uid):
 @login_required_desp("admin")
 def api_logins():
     con = get_db_desp()
+    limite = _limite_consulta(LIMITE_CADASTROS_RETORNO, LIMITE_CADASTROS_RETORNO)
+    antes_id = _parametro_consulta_positivo("antes_id")
+    cursor = antes_id or 0
     rows = con.execute(
         """
         SELECT u.id, u.nome, u.username, u.papel, u.unidade_id,
@@ -174,23 +206,20 @@ def api_logins():
         FROM usuarios u
         LEFT JOIN unidades un ON un.id = u.unidade_id
         WHERE u.ativo = 1
-        ORDER BY CASE u.papel
-            WHEN 'admin' THEN 0
-            WHEN 'solicitante' THEN 1
-            WHEN 'entregador' THEN 2
-            ELSE 3
-        END, u.nome
-        """
+          AND (?=0 OR u.id<?)
+        ORDER BY u.id DESC LIMIT ?
+        """,
+        (cursor, cursor, limite + 1),
     ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    return _resposta_paginada(rows, limite)
 
 
 @despacho_bp.route("/api/usuarios/<int:uid>/senha", methods=["POST"])
 @login_required_desp("admin")
 def api_alterar_senha_usuario(uid):
     con = get_db_desp()
-    d = request.get_json(silent=True) or {}
-    senha = (d.get("senha") or d.get("nova_senha") or "").strip()
+    d = dados_json()
+    senha = texto(d.get("senha") or d.get("nova_senha")).strip()
     if not 8 <= len(senha) <= LIMITE_SENHA:
         return jsonify(error=f"senha deve ter entre 8 e {LIMITE_SENHA} caracteres"), 400
 

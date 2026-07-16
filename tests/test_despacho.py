@@ -559,6 +559,20 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual("João da Recepção", row[0])
         self.assertRegex(row[1], r"^[a-f0-9]{64}$")
 
+        mesmo_operador = self.client.post(
+            "/despacho/api/operadores",
+            json={"nome": "JOÃO   DA RECEPÇÃO"},
+        )
+        self.assertEqual(200, mesmo_operador.status_code, mesmo_operador.get_json())
+
+        con = sqlite3.connect(self.db_path)
+        total = con.execute(
+            "SELECT COUNT(*) FROM operadores_solicitante WHERE unidade_id=? AND ativo=1",
+            (self.origem_id,),
+        ).fetchone()[0]
+        con.close()
+        self.assertEqual(1, total)
+
         self.login("outro_solicitante")
         outra_unidade = self.client.post(
             "/despacho/api/pedidos",
@@ -1348,6 +1362,70 @@ class DispatchApiTests(unittest.TestCase):
         ):
             self.assertIn(expected, html)
         self.assertNotIn("<label>justificativa_atraso</label>", html)
+
+    def test_admin_collections_are_paginated_with_cursor(self):
+        con = sqlite3.connect(self.db_path)
+        con.executemany(
+            "INSERT INTO unidades(nome) VALUES(?)",
+            [(f"Unidade paginação {indice}",) for indice in range(5)],
+        )
+        con.commit()
+        con.close()
+        self.login("admin")
+
+        primeira = self.client.get("/despacho/api/unidades?limit=2")
+        self.assertEqual(2, len(primeira.get_json()))
+        cursor = primeira.headers.get("X-Next-Cursor")
+        self.assertIsNotNone(cursor)
+
+        segunda = self.client.get(
+            f"/despacho/api/unidades?limit=2&antes_id={cursor}"
+        )
+        ids_primeira = {item["id"] for item in primeira.get_json()}
+        ids_segunda = {item["id"] for item in segunda.get_json()}
+        self.assertTrue(ids_primeira.isdisjoint(ids_segunda))
+
+    def test_invalid_json_types_return_validation_errors(self):
+        self.login("admin")
+        unidade = self.client.post(
+            "/despacho/api/unidades", json={"nome": {"valor": "inválido"}}
+        )
+        self.assertEqual(400, unidade.status_code)
+
+        usuario = self.client.post(
+            "/despacho/api/usuarios",
+            json={
+                "nome": ["Nome"],
+                "username": "login",
+                "senha": "Senha-forte-938!",
+                "papel": "solicitante",
+                "codigo_ref": "REF-TIPO",
+                "unidade_id": self.origem_id,
+            },
+        )
+        self.assertEqual(400, usuario.status_code)
+
+        self.login("solicitante")
+        pedido = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": {"id": self.destino_id},
+                "tipo": "Sangue",
+                "urgencia": "rotina",
+                "tipo_veiculo": "moto",
+                "operador_nome": "Operador",
+            },
+        )
+        self.assertEqual(400, pedido.status_code)
+
+    def test_report_rejects_invalid_month_and_year(self):
+        self.login("admin")
+        for query in ("mes=13&ano=2026", "mes=texto&ano=2026", "mes=1&ano=1800"):
+            with self.subTest(query=query):
+                response = self.client.get(
+                    f"/despacho/api/relatorios/inconformidades?{query}"
+                )
+                self.assertEqual(400, response.status_code)
 
 
 if __name__ == "__main__":

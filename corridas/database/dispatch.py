@@ -11,6 +11,7 @@ from ..config import POSTGRES_SCHEMA_REVISION, SQLITE_SCHEMA_OBRIGATORIO, URGENC
 from ..config import senha_admin_inicial_configurada
 from ..extensions import despacho_bp
 from .runtime import abrir_conexao, banco_postgres_configurado
+from ..validation import texto
 
 
 DESP_DB_PATH = config.DESP_DB_PATH
@@ -71,8 +72,8 @@ def _ensure_column(con, table, column, definition):
 
 
 def _normalizar_veiculo(valor, padrao=None):
-    texto = " ".join((valor or "").strip().split()).casefold()
-    return texto or padrao
+    normalizado = " ".join(texto(valor).strip().split()).casefold()
+    return normalizado or padrao
 
 
 def init_db_desp():
@@ -133,6 +134,7 @@ def init_db_desp():
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id  INTEGER NOT NULL REFERENCES unidades(id),
             nome        TEXT NOT NULL,
+            nome_normalizado TEXT NOT NULL,
             codigo      TEXT NOT NULL,
             ativo       INTEGER NOT NULL DEFAULT 1,
             criado_em   INTEGER NOT NULL,
@@ -222,6 +224,27 @@ def init_db_desp():
         _ensure_column(con, "pedidos", column, definition)
 
     _ensure_column(con, "chat_mensagens", "unidade_id", "INTEGER REFERENCES unidades(id)")
+    _ensure_column(con, "operadores_solicitante", "nome_normalizado", "TEXT")
+    operadores = con.execute(
+        "SELECT id, unidade_id, nome, ativo FROM operadores_solicitante ORDER BY id"
+    ).fetchall()
+    nomes_ativos = set()
+    for operador in operadores:
+        nome_normalizado = " ".join(texto(operador["nome"]).strip().split()).casefold()
+        ativo = int(operador["ativo"])
+        chave = (operador["unidade_id"], nome_normalizado)
+        if ativo and chave in nomes_ativos:
+            ativo = 0
+        elif ativo:
+            nomes_ativos.add(chave)
+        con.execute(
+            "UPDATE operadores_solicitante SET nome_normalizado=?, ativo=? WHERE id=?",
+            (nome_normalizado, ativo, operador["id"]),
+        )
+    con.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_operadores_unidade_nome_ativo "
+        "ON operadores_solicitante(unidade_id, nome_normalizado) WHERE ativo=1"
+    )
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_chat_unidade_ts ON chat_mensagens(unidade_id, ts)"
     )

@@ -16,6 +16,29 @@ jobs:
   verificar:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: despacho_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d despacho_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       APP_ENV: testing
       APP_SECRET: segredo-exclusivo-para-testes-automatizados-no-ci
@@ -42,6 +65,12 @@ jobs:
 
       - name: Executar testes
         run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Testar PostgreSQL e Redis reais
+        env:
+          TEST_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/despacho_test?sslmode=disable
+          TEST_REDIS_URL: redis://127.0.0.1:6379/0
+        run: python -m unittest tests.test_integration_services
 
       - name: Validar configuração de nuvem
         run: python scripts/gcp_preflight.py

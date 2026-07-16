@@ -8,9 +8,10 @@ import time
 from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
 
-from flask import request
+from flask import jsonify, request
 
 from ..config import (
+    LIMITE_TIPOS_COLETA_RETORNO,
     LIMITE_NOME,
     STATUS_ATIVOS_ENTREGADOR,
     TIPOS_EXAME,
@@ -18,6 +19,7 @@ from ..config import (
     URGENCIA_META,
 )
 from ..database.dispatch import _normalizar_veiculo
+from ..validation import texto
 
 
 TZ = ZoneInfo(TZ_NOME)
@@ -43,16 +45,34 @@ def _limite_consulta(padrao, maximo):
     return min(solicitado or padrao, maximo)
 
 
+def _resposta_paginada(rows, limite, serializar=dict, inverter=False, campo_cursor="id"):
+    registros = list(rows)
+    tem_proxima = len(registros) > limite
+    pagina = registros[:limite]
+    proximo_cursor = pagina[-1][campo_cursor] if tem_proxima and pagina else None
+    if inverter:
+        pagina.reverse()
+    resposta = jsonify([serializar(row) for row in pagina])
+    resposta.headers["X-Page-Limit"] = str(limite)
+    if proximo_cursor is not None:
+        resposta.headers["X-Next-Cursor"] = str(proximo_cursor)
+    return resposta
+
+
+def _inteiro_positivo(valor):
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return None
+    return numero if numero > 0 else None
+
+
 def _protocolo(pid):
     return f"COL-{pid:05d}"
 
 
 def _sla_limite_min(urgencia):
     return URGENCIA_META.get(urgencia, URGENCIA_META["rotina"])["sla_min"]
-
-
-def _status_placeholders(statuses):
-    return ",".join("?" for _ in statuses)
 
 
 def _as_dict(row):
@@ -72,7 +92,7 @@ def _nome_usuario(con, usuario_id):
 
 
 def _normalizar_tipo_coleta(nome):
-    return " ".join((nome or "").strip().split()).casefold()
+    return " ".join(texto(nome).strip().split()).casefold()
 
 
 def _tipos_base_sem_outro():
@@ -88,8 +108,9 @@ def _tipos_exame_da_unidade(con, unidade_id):
         FROM tipos_coleta_unidade
         WHERE unidade_id=? AND ativo=1
         ORDER BY nome
+        LIMIT ?
         """,
-        (unidade_id,),
+        (unidade_id, LIMITE_TIPOS_COLETA_RETORNO),
     ).fetchall()
     for row in rows:
         normalizado = _normalizar_tipo_coleta(row["nome"])
@@ -115,7 +136,7 @@ def _buscar_tipo_custom(con, unidade_id, nome):
 
 
 def _salvar_tipo_custom(con, unidade_id, nome):
-    nome_limpo = " ".join((nome or "").strip().split())
+    nome_limpo = " ".join(texto(nome).strip().split())
     normalizado = _normalizar_tipo_coleta(nome_limpo)
     if len(nome_limpo) < 2 or len(nome_limpo) > LIMITE_NOME or normalizado == "outro":
         return None
@@ -123,6 +144,17 @@ def _salvar_tipo_custom(con, unidade_id, nome):
     tipos_base = {_normalizar_tipo_coleta(tipo): tipo for tipo in _tipos_base_sem_outro()}
     if normalizado in tipos_base:
         return tipos_base[normalizado]
+
+    existente = _buscar_tipo_custom(con, unidade_id, nome_limpo)
+    if existente:
+        return existente["nome"]
+
+    total = con.execute(
+        "SELECT COUNT(*) AS n FROM tipos_coleta_unidade WHERE unidade_id=? AND ativo=1",
+        (unidade_id,),
+    ).fetchone()["n"]
+    if total >= LIMITE_TIPOS_COLETA_RETORNO:
+        return None
 
     con.execute(
         """
@@ -136,7 +168,7 @@ def _salvar_tipo_custom(con, unidade_id, nome):
 
 
 def _resolver_tipo_pedido(con, unidade_id, tipo, tipo_outro=None):
-    tipo_limpo = " ".join((tipo or "").strip().split())
+    tipo_limpo = " ".join(texto(tipo).strip().split())
     normalizado = _normalizar_tipo_coleta(tipo_limpo)
     tipos_base = {_normalizar_tipo_coleta(t): t for t in _tipos_base_sem_outro()}
 
@@ -163,37 +195,39 @@ def _gerar_codigo_operador(con, unidade_id, nome):
 
 
 def _normalizar_nome_operador(nome):
-    return " ".join((nome or "").strip().split()).casefold()
+    return " ".join(texto(nome).strip().split()).casefold()
 
 
 def _buscar_ou_criar_operador(con, unidade_id, nome):
-    nome_limpo = " ".join((nome or "").strip().split())
+    nome_limpo = " ".join(texto(nome).strip().split())
     if len(nome_limpo) < 2 or len(nome_limpo) > LIMITE_NOME:
         return None
 
     nome_normalizado = _normalizar_nome_operador(nome_limpo)
-    rows = con.execute(
+    row = con.execute(
         """
         SELECT id, unidade_id, nome, codigo, ativo, criado_em
         FROM operadores_solicitante
-        WHERE unidade_id=? AND ativo=1
-        ORDER BY id
+        WHERE unidade_id=? AND nome_normalizado=? AND ativo=1
+        LIMIT 1
         """,
-        (unidade_id,),
-    ).fetchall()
-    for row in rows:
-        if _normalizar_nome_operador(row["nome"]) == nome_normalizado:
-            return row
+        (unidade_id, nome_normalizado),
+    ).fetchone()
+    if row:
+        return row
 
     codigo = _gerar_codigo_operador(con, unidade_id, nome_limpo)
-    cur = con.execute(
-        "INSERT INTO operadores_solicitante(unidade_id,nome,codigo,ativo,criado_em) "
-        "VALUES(?,?,?,?,?)",
-        (unidade_id, nome_limpo, codigo, 1, agora_ms()),
+    con.execute(
+        "INSERT OR IGNORE INTO operadores_solicitante"
+        "(unidade_id,nome,nome_normalizado,codigo,ativo,criado_em) "
+        "VALUES(?,?,?,?,?,?)",
+        (unidade_id, nome_limpo, nome_normalizado, codigo, 1, agora_ms()),
     )
     return con.execute(
-        "SELECT id, unidade_id, nome, codigo, ativo, criado_em FROM operadores_solicitante WHERE id=?",
-        (cur.lastrowid,),
+        "SELECT id, unidade_id, nome, codigo, ativo, criado_em "
+        "FROM operadores_solicitante "
+        "WHERE unidade_id=? AND nome_normalizado=? AND ativo=1 LIMIT 1",
+        (unidade_id, nome_normalizado),
     ).fetchone()
 
 
@@ -284,10 +318,10 @@ def linha_pedido(con, r):
 
 
 def _entregador_ocupado(con, entregador_id):
-    placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
     return (
         con.execute(
-            f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders}) LIMIT 1",  # nosec B608
+            "SELECT 1 FROM pedidos WHERE entregador_id=? "
+            "AND status IN (?,?,?,?,?) LIMIT 1",
             (entregador_id, *STATUS_ATIVOS_ENTREGADOR),
         ).fetchone()
         is not None
@@ -295,12 +329,11 @@ def _entregador_ocupado(con, entregador_id):
 
 
 def _reservar_entregador(con, entregador_id):
-    placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
     resultado = con.execute(
-        "UPDATE usuarios SET disponivel=0 "  # nosec B608
+        "UPDATE usuarios SET disponivel=0 "
         "WHERE id=? AND papel='entregador' AND ativo=1 AND disponivel=1 "
         "AND NOT EXISTS ("
-        f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders})"
+        "SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN (?,?,?,?,?)"
         ")",
         (entregador_id, entregador_id, *STATUS_ATIVOS_ENTREGADOR),
     )
@@ -308,11 +341,10 @@ def _reservar_entregador(con, entregador_id):
 
 
 def _liberar_entregador_se_sem_pedido_ativo(con, entregador_id):
-    placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
     con.execute(
-        "UPDATE usuarios SET disponivel=1 "  # nosec B608
+        "UPDATE usuarios SET disponivel=1 "
         "WHERE id=? AND NOT EXISTS ("
-        f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders})"
+        "SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN (?,?,?,?,?)"
         ")",
         (entregador_id, entregador_id, *STATUS_ATIVOS_ENTREGADOR),
     )

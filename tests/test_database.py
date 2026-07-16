@@ -56,7 +56,7 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         )
 
         self.assertNotIn("COLLATE NOCASE", despacho_source.upper())
-        self.assertIn("ORDER BY ultimo_ts DESC, LOWER(unidade)", despacho_source)
+        self.assertIn("ORDER BY c.unidade_id DESC", despacho_source)
 
     def test_database_url_requires_postgres_and_enables_ssl(self):
         with patch.dict(
@@ -96,9 +96,10 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         scripts = ScriptDirectory.from_config(config)
         revisions = [revision.revision for revision in scripts.walk_revisions()]
 
-        self.assertEqual(["004_revogacao_sessao"], scripts.get_heads())
+        self.assertEqual(["005_operadores_normalizados"], scripts.get_heads())
         self.assertEqual(
             [
+                "005_operadores_normalizados",
                 "004_revogacao_sessao",
                 "003_despacho_atomico",
                 "002_urgencia_mista",
@@ -151,6 +152,15 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("ADD COLUMN IF NOT EXISTS sessao_versao", session_revocation_migration)
         self.assertIn("004_revogacao_sessao", session_revocation_migration)
+
+        normalized_operators_migration = (
+            PROJECT_ROOT
+            / "migrations"
+            / "versions"
+            / "005_operadores_normalizados.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("nome_normalizado", normalized_operators_migration)
+        self.assertIn("ux_operadores_unidade_nome_ativo", normalized_operators_migration)
 
         role_script = (PROJECT_ROOT / "scripts" / "init_supabase.py").read_text(
             encoding="utf-8"

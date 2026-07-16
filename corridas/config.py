@@ -38,7 +38,7 @@ STATUS_ATIVOS_ENTREGADOR = (
 )
 STATUS_RASTREAMENTO = ("em_rota_retirada", "em_rota", "despachado", "coletado")
 STATUS_EM_ANDAMENTO = STATUS_ATIVOS_ENTREGADOR
-POSTGRES_SCHEMA_REVISION = "004_revogacao_sessao"
+POSTGRES_SCHEMA_REVISION = "005_operadores_normalizados"
 SQLITE_SCHEMA_OBRIGATORIO = {
     "unidades": {"id", "nome"},
     "usuarios": {
@@ -58,7 +58,12 @@ SQLITE_SCHEMA_OBRIGATORIO = {
         "ts_aceito_entregador",
         "ts_cancelado",
     },
-    "operadores_solicitante": {"id", "unidade_id", "codigo"},
+    "operadores_solicitante": {
+        "id",
+        "unidade_id",
+        "codigo",
+        "nome_normalizado",
+    },
     "tipos_coleta_unidade": {"id", "unidade_id", "nome_normalizado"},
     "localizacoes_pedido": {"id", "pedido_id", "latitude", "longitude"},
     "indisponibilidades_entregador": {"id", "entregador_id", "tipo"},
@@ -79,6 +84,10 @@ LIMITE_JUSTIFICATIVA = 1000
 LIMITE_PEDIDOS_RETORNO = 500
 LIMITE_CHAT_RETORNO = 200
 LIMITE_LOCALIZACOES_RETORNO = 1000
+LIMITE_CADASTROS_RETORNO = 200
+LIMITE_RELATORIO_RETORNO = 200
+LIMITE_RESUMO_CHAT_RETORNO = 200
+LIMITE_TIPOS_COLETA_RETORNO = 200
 
 SENHAS_ADMIN_INSEGURAS = {
     "mudar123",

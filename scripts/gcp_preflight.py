@@ -23,6 +23,7 @@ def main():
         "alembic.ini": ROOT / "alembic.ini",
         "ambiente Alembic": ROOT / "migrations" / "env.py",
         "migration inicial": ROOT / "migrations" / "versions" / "001_initial.py",
+        "migration operadores normalizados": ROOT / "migrations" / "versions" / "005_operadores_normalizados.py",
         "migration urgência mista": ROOT / "migrations" / "versions" / "002_urgencia_mista.py",
         "migration despacho atômico": ROOT / "migrations" / "versions" / "003_despacho_atomico.py",
         "migration revogação de sessão": ROOT / "migrations" / "versions" / "004_revogacao_sessao.py",

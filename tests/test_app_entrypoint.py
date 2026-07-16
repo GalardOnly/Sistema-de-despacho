@@ -355,6 +355,8 @@ class AppEntrypointTests(unittest.TestCase):
         csp = admin.headers["Content-Security-Policy"]
         self.assertIn(f"script-src 'self' 'nonce-{nonce}'", csp)
         self.assertIn(f"style-src 'self' 'nonce-{nonce}'", csp)
+        self.assertIn("style-src-attr 'none'", csp)
+        self.assertNotIn("'unsafe-inline'", csp)
         self.assertNotIn("script-src 'self' 'unsafe-inline'", csp)
         self.assertNotIn("style-src 'self' 'unsafe-inline'", csp)
         self.assertIn("script-src-attr 'none'", csp)
@@ -370,6 +372,14 @@ class AppEntrypointTests(unittest.TestCase):
             for tag in re.findall(r"<(?:script|style)\b[^>]*>", source):
                 with self.subTest(template=path.name, tag=tag):
                     self.assertIn('nonce="{{ g.csp_nonce }}"', tag)
+
+    def test_templates_do_not_use_inline_style_attributes(self):
+        templates = PROJECT_ROOT / "corridas" / "templates"
+        for caminho in templates.rglob("*.html"):
+            conteudo = caminho.read_text(encoding="utf-8")
+            with self.subTest(template=str(caminho.relative_to(PROJECT_ROOT))):
+                self.assertNotIn("style=", conteudo)
+                self.assertNotIn(".style.", conteudo)
 
     def test_login_error_is_generic_for_known_and_unknown_users(self):
         known = self.client.post(

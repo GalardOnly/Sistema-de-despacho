@@ -34,6 +34,7 @@
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}.stat{background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--primary);border-radius:13px;padding:14px}.stat.warn{border-left-color:#d98b00}.stat.danger{border-left-color:#c0392b}.stat b{display:block;font-size:22px;margin-bottom:3px}.stat span{font-size:11px;color:var(--muted)}
   @media(max-width:760px){header .brand-logo img{width:86px}header{padding-right:18px;padding-left:18px}}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 8px 22px rgba(15,93,42,.04)}
+  .field-label{display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px}.sla-overdue{color:var(--red-ink);font-weight:800}
   .card h2{font-size:15px;margin-bottom:14px}
   .field{margin-bottom:12px}.field label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:6px}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13.5px Inter;color:var(--ink)}
   .choice-row{display:flex;gap:7px;margin-bottom:16px}.choice-row button{flex:1;border:1px solid var(--border);background:#fff;color:var(--muted);font-weight:800;font-size:11px;padding:10px 7px;border-radius:9px;cursor:pointer}
@@ -50,7 +51,7 @@
   .chat-box{height:265px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}.msg{background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px}.msg.admin{border-left:4px solid var(--primary)}.msg .who{font-size:10px;font-weight:800;color:var(--muted);margin-bottom:4px}.msg p{font-size:12.5px;line-height:1.4}
   .floating-chat{position:fixed;right:24px;bottom:24px;border:none;background:var(--primary);color:#fff;border-radius:999px;padding:13px 18px;font-weight:900;font-size:13px;box-shadow:0 14px 30px rgba(0,80,48,.22);cursor:pointer;z-index:80}.floating-chat:hover{background:var(--primary-dark)}
   .floating-chat-panel{position:fixed;right:24px;bottom:82px;width:min(390px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 22px 46px rgba(12,45,26,.18);z-index:79;display:none}.floating-chat-panel.open{display:block}.floating-chat-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}.floating-chat-head h2{font-size:15px;margin-bottom:3px}.floating-chat-head span{font-size:11.5px;color:var(--muted)}.floating-chat-close{border:1px solid var(--border);background:var(--surface-2);color:var(--muted);border-radius:8px;padding:6px 8px;font-size:11px;font-weight:900;cursor:pointer}.floating-chat-panel .chat-box{height:260px}.floating-chat-panel .field{margin-top:12px}
-  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.danger{border-left-color:#a93226}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   @media(max-width:820px){.form-grid .field,.form-grid .field.third{grid-column:span 12}.stats{grid-template-columns:1fr}.module-tabs{position:sticky;top:86px;z-index:20}.floating-chat{right:16px;bottom:16px}.floating-chat-panel{right:16px;bottom:74px}}
 </style>
 </head>
@@ -94,12 +95,12 @@
           <label>Nome do que será coletado</label>
           <input id="tipoOutro" autocomplete="off" placeholder="Digite o tipo de coleta">
         </div>
-        <label class="field-label" style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Veículo necessário</label>
+        <label class="field-label">Veículo necessário</label>
         <div class="choice-row" id="veiculoRow">
           <button class="on vehicle" data-vehicle="moto">Moto</button>
           <button data-vehicle="carro">Carro</button>
         </div>
-        <label id="urgenciaLabel" style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Nível de urgência</label>
+        <label class="field-label" id="urgenciaLabel">Nível de urgência</label>
         <div class="choice-row" id="urgRow"></div>
         <button class="primary" id="btnSolicitar">Solicitar coleta</button>
       </div>
@@ -191,9 +192,10 @@ const fmtHora = ts => ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',mo
 function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
 function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
 function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'ENTREGADOR ACIONADO',em_rota_retirada:'ENTREGADOR A CAMINHO',em_rota:'ENTREGADOR A CAMINHO',despachado:'EXAME RETIRADO / EM ENTREGA',coletado:'EXAME RETIRADO',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
-function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function slaLinha(p){return p.sla?.atrasado?`<span class="sla-overdue">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.classList.toggle('danger',type==='danger');el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,window.despachoFetchOptions(opt));const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
+async function apiColecao(url,maxPaginas=100){const itens=[];let cursor=null;for(let pagina=0;pagina<maxPaginas;pagina++){const separador=url.includes('?')?'&':'?';const alvo=cursor?`${url}${separador}antes_id=${encodeURIComponent(cursor)}`:url;const r=await fetch(alvo,window.despachoFetchOptions());const dados=await r.json().catch(()=>({}));if(!r.ok)throw new Error(dados.error||('erro '+r.status));if(!Array.isArray(dados))throw new Error('resposta de coleção inválida');itens.push(...dados);cursor=r.headers.get('X-Next-Cursor');if(!cursor)return itens;}throw new Error('A consulta excedeu o limite de páginas permitido.');}
 
 const pacientesMvp = [
   {nome:'Maria de Souza', documento:'***.123.456-**', telefone:'(14) 99999-0101', convenio:'Unimed'},
@@ -279,7 +281,8 @@ $('veiculoRow').addEventListener('click', e=>{
 });
 
 async function carregarDestinos(){
-  const unidades = await api('/despacho/api/unidades');
+  const unidades = await apiColecao('/despacho/api/unidades');
+  unidades.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   $('selDestino').innerHTML = unidades.filter(u=>u.nome!==minhaUnidade).map(u=>`<option value="${u.id}">${escapeHtml(u.nome)}</option>`).join('');
 }
 

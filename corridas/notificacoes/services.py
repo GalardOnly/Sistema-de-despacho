@@ -1,7 +1,5 @@
 """Criação e filtragem de notificações por papel e unidade."""
 
-from flask import session
-
 from ..chat.services import _resumo_mensagem_chat
 from ..pedidos.services import _nome_unidade, _nome_usuario, _protocolo, agora_ms
 
@@ -173,14 +171,3 @@ def _notificar_chat(con, papel_remetente, unidade_id, texto):
             "chat",
             unidade_id=unidade_id,
         )
-
-
-def _filtro_notificacoes_sessao(alias="n"):
-    papel = session["desp_papel"]
-    if papel == "admin":
-        return f"{alias}.papel_destino='admin'", []
-    if papel == "entregador":
-        return f"{alias}.papel_destino='entregador' AND {alias}.usuario_id=?", [session["desp_uid"]]
-    return f"{alias}.papel_destino='solicitante' AND {alias}.unidade_id=?", [
-        session["desp_unidade_id"]
-    ]

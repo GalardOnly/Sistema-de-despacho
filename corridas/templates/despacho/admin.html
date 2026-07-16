@@ -25,6 +25,7 @@
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
   @media(max-width:920px){.grid2,.grid3{grid-template-columns:1fr}}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:0 8px 22px rgba(15,93,42,.04)}
+  .mt-18{margin-top:18px}.mt-12{margin-top:12px}.reports-refresh{max-width:220px;margin-bottom:12px}.sla-overdue{color:var(--red-ink);font-weight:800}
   .card h2{font-size:14.5px;margin-bottom:14px}.card h3{font-size:13px;margin-bottom:10px;color:var(--muted)}
   .rowlist{display:flex;flex-direction:column;gap:9px;max-height:500px;overflow-y:auto}
   .item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:12px}
@@ -48,7 +49,7 @@
   @media(max-width:820px){.stats{grid-template-columns:1fr 1fr}}
   .chat-box{height:360px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}.msg{background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px}.msg.admin{border-left:4px solid var(--primary)}.msg .who{font-size:10px;font-weight:800;color:var(--muted);margin-bottom:4px}.msg p{font-size:12.5px;line-height:1.4}
   .mini-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.mini-actions select{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font:12px Inter;color:var(--ink)}.mini-actions button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:800;cursor:pointer}.mini-actions button:hover{border-color:var(--primary);color:var(--primary)}.mini-actions button.danger{border-color:#efb6b1;color:var(--red-ink)}.mini-actions button.danger:hover{background:var(--red-bg)}
-  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.danger{border-left-color:#a93226}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
@@ -77,18 +78,18 @@
       <div class="card"><h2>Em andamento</h2><div class="rowlist" id="listAndamento"></div></div>
       <div class="card"><h2>Disponíveis agora</h2><div class="rowlist" id="listDisponiveis"></div></div>
     </div>
-    <div class="card" style="margin-top:18px"><h2>Histórico de concluídos</h2><div class="rowlist" id="listHistorico"></div></div>
+    <div class="card mt-18"><h2>Histórico de concluídos</h2><div class="rowlist" id="listHistorico"></div></div>
   </section>
 
   <section class="pane" id="pane-relatorios">
     <div class="card"><h2>Resumo de corridas diárias</h2><div class="stats" id="resumoDiario"></div></div>
-    <div class="card" style="margin-top:18px">
+    <div class="card mt-18">
       <h2>Extrato mensal de inconformidades</h2>
       <div class="grid2">
         <div class="field"><label>Mês</label><select id="relMes"></select></div>
         <div class="field"><label>Ano</label><input id="relAno" type="number"></div>
       </div>
-      <button class="primary" id="btnRelatorios" style="max-width:220px;margin-bottom:12px">Atualizar relatórios</button>
+      <button class="primary reports-refresh" id="btnRelatorios">Atualizar relatórios</button>
       <table><thead><tr><th>Série</th><th>Entregador</th><th>Solicitante</th><th>Excedido</th><th>Justificativa</th></tr></thead><tbody id="tabInconformidades"></tbody></table>
     </div>
   </section>
@@ -99,7 +100,7 @@
         <h2>Conversas por unidade</h2>
         <div class="field"><label>Unidade</label><select id="chatUnidade"></select></div>
         <div class="chat-box" id="chatMensagens"></div>
-        <div class="field" style="margin-top:12px"><label>Resposta do admin</label><textarea id="chatTexto" rows="3" placeholder="Digite a resposta..."></textarea></div>
+        <div class="field mt-12"><label>Resposta do admin</label><textarea id="chatTexto" rows="3" placeholder="Digite a resposta..."></textarea></div>
         <button class="primary" id="btnEnviarChat">Enviar mensagem</button>
       </div>
       <div class="card"><h2>Barra de mensagens</h2><div class="rowlist" id="chatResumo"></div></div>
@@ -170,15 +171,16 @@ const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];
 const URG_LABELS = {rotina:'ROTINA (12 horas)', urgente:'URGENTE (40 min)', emergencia:'EMERGÊNCIA (15 min)'};
 
 function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.classList.toggle('danger',type==='danger');el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,window.despachoFetchOptions(opt));const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
+async function apiColecao(url,maxPaginas=100){const itens=[];let cursor=null;for(let pagina=0;pagina<maxPaginas;pagina++){const separador=url.includes('?')?'&':'?';const alvo=cursor?`${url}${separador}antes_id=${encodeURIComponent(cursor)}`:url;const r=await fetch(alvo,window.despachoFetchOptions());const dados=await r.json().catch(()=>({}));if(!r.ok)throw new Error(dados.error||('erro '+r.status));if(!Array.isArray(dados))throw new Error('resposta de coleção inválida');itens.push(...dados);cursor=r.headers.get('X-Next-Cursor');if(!cursor)return itens;}throw new Error('A consulta excedeu o limite de páginas permitido.');}
 const fmtHora = ts => ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
 function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
 function normalizarVeiculo(v){return String(v || 'moto').trim().toLowerCase();}
 function veiculoLabel(v){return normalizarVeiculo(v)==='carro'?'Carro':'Moto';}
 function veiculoOptions(v){const atual=normalizarVeiculo(v);return ['moto','carro'].map(x=>`<option value="${x}" ${atual===x?'selected':''}>${veiculoLabel(x)}</option>`).join('');}
 function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'AGUARDANDO ENTREGADOR',em_rota_retirada:'A CAMINHO DA RETIRADA',em_rota:'A CAMINHO DA RETIRADA',despachado:'DESPACHADO / EM ENTREGA',coletado:'DESPACHADO / EM ENTREGA',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
-function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function slaLinha(p){return p.sla?.atrasado?`<span class="sla-overdue">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
 function operadorLinha(p){return p.operador_nome?`<div class="meta">Solicitado por: <strong>${escapeHtml(p.operador_nome)}</strong></div>`:'<div class="meta">Solicitado por: <strong>cadastro antigo não informado</strong></div>';}
 function resumoMensagensLabel(n){return Number(n)===1?'1 mensagem recebida':`${n} mensagens recebidas`;}
 
@@ -192,14 +194,16 @@ document.querySelectorAll('.tabs button').forEach(btn=>btn.addEventListener('cli
 }));
 
 async function carregarUnidades(){
-  unidades = await api('/despacho/api/unidades');
+  unidades = await apiColecao('/despacho/api/unidades');
+  unidades.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const opts = unidades.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)}</option>`).join('');
   $('novoSolicitanteUnidade').innerHTML = opts;
   $('tabUnidades').innerHTML = unidades.map(u=>`<tr><td>${escapeHtml(u.nome)}</td></tr>`).join('') || '<tr><td>Nenhuma unidade.</td></tr>';
 }
 
 async function carregarUsuarios(){
-  usuarios = await api('/despacho/api/usuarios');
+  usuarios = await apiColecao('/despacho/api/usuarios');
+  usuarios.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const solicitantes = usuarios.filter(u=>u.papel==='solicitante');
   const entregadores = usuarios.filter(u=>u.papel==='entregador');
   $('tabSolicitantes').innerHTML = solicitantes.map(u=>`<tr><td>${escapeHtml(u.nome)}</td><td class="mono">${escapeHtml(u.username)}</td><td>${escapeHtml(u.codigo_ref||'—')}</td><td>${escapeHtml(u.unidade_nome||'—')}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum solicitante.</td></tr>';
@@ -231,7 +235,8 @@ function detalheLogin(u){
   return '';
 }
 async function carregarLogins(){
-  logins = await api('/despacho/api/logins');
+  logins = await apiColecao('/despacho/api/logins');
+  logins.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const atual = $('resetUsuario').value;
   $('resetUsuario').innerHTML = logins.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)} · ${escapeHtml(u.username)} · ${perfilLabel(u.papel)}${detalheLogin(u)}</option>`).join('');
   if(atual) $('resetUsuario').value = atual;
@@ -357,7 +362,7 @@ function setupRelatorios(){
 async function carregarRelatorios(){
   const resumo=await api('/despacho/api/relatorios/resumo-diario');
   $('resumoDiario').innerHTML=[['total','Total'],['entregues','Entregues'],['em_andamento','Em andamento'],['cancelados','Cancelados'],['fora_sla','Fora do SLA']].map(([k,l])=>`<div class="stat"><b>${resumo[k]}</b><span>${l}</span></div>`).join('');
-  const rows=await api(`/despacho/api/relatorios/inconformidades?mes=${$('relMes').value}&ano=${$('relAno').value}`);
+  const rows=await apiColecao(`/despacho/api/relatorios/inconformidades?mes=${$('relMes').value}&ano=${$('relAno').value}`);
   $('tabInconformidades').innerHTML=rows.map(r=>`<tr><td class="mono">${escapeHtml(r.protocolo)}</td><td>${escapeHtml(r.entregador||'—')}</td><td>${escapeHtml(r.solicitante||'—')}</td><td>${escapeHtml(r.tempo_excedido)}</td><td>${escapeHtml(r.justificativa_atraso||'Sem justificativa')}</td></tr>`).join('')||'<tr><td colspan="5">Nenhuma inconformidade no mês.</td></tr>';
 }
 $('btnRelatorios').onclick=carregarRelatorios;
@@ -365,7 +370,8 @@ $('btnRelatorios').onclick=carregarRelatorios;
 async function carregarChat(){
   await carregarUsuarios();
   const unidadeId=$('chatUnidade').value;
-  const resumo=await api('/despacho/api/chat/resumo');
+  const resumo=await apiColecao('/despacho/api/chat/resumo');
+  resumo.sort((a,b)=>(b.ultimo_ts||0)-(a.ultimo_ts||0));
   $('chatResumo').innerHTML=resumo.map(r=>`<div class="item" data-chat-unit="${r.unidade_id}"><div class="top"><span class="proto">${escapeHtml(r.unidade||'Unidade')}</span><span class="tag tipo">${resumoMensagensLabel(r.recebidas)}</span></div><div class="meta">Total na conversa: <strong>${r.total}</strong> · Última movimentação: ${fmtHora(r.ultimo_ts)}</div></div>`).join('')||'<div class="empty">Sem mensagens ainda.</div>';
   if(!unidadeId){$('chatMensagens').innerHTML='<div class="empty">Cadastre ou selecione uma unidade.</div>';return;}
   const msgs=await api(`/despacho/api/chat?unidade_id=${unidadeId}`);
