@@ -1288,7 +1288,7 @@ class DispatchApiTests(unittest.TestCase):
             "ROTINA (12 horas)",
             "Chat interno",
             "brand-logo",
-            "/static/img/unimed.png",
+            "brand-wordmark",
             "--primary:#009962",
             "Nome de quem está solicitando",
             "operadorNome",
