@@ -22,8 +22,8 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --service-account=sistema-despacho-run@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=APP_ENV=homologation,ALLOW_EPHEMERAL_SQLITE=1,TRUST_PROXY_HEADERS=1,DESPACHO_DB_PATH=/tmp/despacho.db,GUNICORN_WORKERS=1
-      - --set-secrets=APP_SECRET=despacho-app-secret:latest,DESPACHO_ADMIN_SENHA_INICIAL=despacho-admin-senha-inicial:latest
+      - --set-env-vars=APP_ENV=homologation,TRUST_PROXY_HEADERS=1,GUNICORN_WORKERS=1,DATABASE_POOL_SIZE=5,DATABASE_POOL_OVERFLOW=2
+      - --set-secrets=APP_SECRET=despacho-app-secret:latest,DESPACHO_ADMIN_SENHA_INICIAL=despacho-admin-senha-inicial:latest,DATABASE_URL=despacho-database-url:latest
       - --min=1
       - --max=1
       - --concurrency=20

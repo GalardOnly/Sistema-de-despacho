@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 CORRIDAS_DIR = Path(__file__).resolve().parents[1]
@@ -152,7 +153,22 @@ class AppEntrypointTests(unittest.TestCase):
         )
 
         self.assertNotEqual(0, proc.returncode)
-        self.assertIn("Produção bloqueada", proc.stderr + proc.stdout)
+        self.assertIn("Produção exige DATABASE_URL", proc.stderr + proc.stdout)
+
+    def test_production_requires_limited_postgres_role(self):
+        base_env = {
+            "APP_ENV": "production",
+            "DATABASE_URL": "postgresql://postgres.projeto:senha@localhost:5432/postgres",
+        }
+        with patch.dict(os.environ, base_env, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "role limitada despacho_app"):
+                self.app_module.validar_persistencia_cloud_run()
+
+        base_env["DATABASE_URL"] = (
+            "postgresql://despacho_app.projeto:senha@localhost:5432/postgres"
+        )
+        with patch.dict(os.environ, base_env, clear=False):
+            self.app_module.validar_persistencia_cloud_run()
 
     def test_cloud_run_homologation_requires_explicit_ephemeral_sqlite(self):
         env = os.environ.copy()
@@ -199,8 +215,16 @@ class AppEntrypointTests(unittest.TestCase):
         self.assertIn("corridas.app:app", dockerfile)
         self.assertIn("gunicorn", requirements)
         self.assertIn("APP_ENV=homologation", cloudbuild)
-        self.assertIn("ALLOW_EPHEMERAL_SQLITE=1", cloudbuild)
+        self.assertIn("DATABASE_URL=despacho-database-url:latest", cloudbuild)
+        self.assertNotIn("ALLOW_EPHEMERAL_SQLITE=1", cloudbuild)
         self.assertIn("--max=1", cloudbuild)
+
+    def test_direct_execution_does_not_expose_flask_debugger_by_default(self):
+        source = (CORRIDAS_DIR / "app.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("app.run(debug=True", source)
+        self.assertNotIn('host="0.0.0.0"', source)
+        self.assertIn('FLASK_DEBUG", False', source)
 
     def test_security_headers_and_session_cookie_are_enabled(self):
         response = self.client.get("/despacho/login", base_url="https://localhost")

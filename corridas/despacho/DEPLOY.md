@@ -63,7 +63,15 @@ Depois clique em Reload.
 
 Não use os textos de exemplo literalmente. A aplicação não inicia sem `APP_SECRET`, e o primeiro administrador não é criado sem `DESPACHO_ADMIN_SENHA_INICIAL`.
 
-## 4. Primeiro acesso
+## 4. Segurança do MVP
+
+O rate limit do MVP faz parte do próprio projeto e usa memória do processo. Ele não exige biblioteca adicional. Na futura infraestrutura com múltiplos processos, substitua essa implementação por um limitador distribuído com Redis.
+
+Os limites padrão são 5 falhas em 300 segundos por combinação de IP e usuário, e 30 falhas em 3600 segundos por IP. Os valores podem ser ajustados com `DESPACHO_LOGIN_MAX_USUARIO`, `DESPACHO_LOGIN_JANELA_USUARIO_SEG`, `DESPACHO_LOGIN_MAX_IP` e `DESPACHO_LOGIN_JANELA_IP_SEG`.
+
+Em uma execução local sem HTTPS, defina `DESPACHO_COOKIE_SECURE=0`. No PythonAnywhere e em produção, mantenha o valor padrão seguro.
+
+## 5. Primeiro acesso
 
 Abra:
 
@@ -78,7 +86,7 @@ Usuário inicial:
 
 A senha inicial só é usada quando o banco ainda não tem nenhum usuário cadastrado.
 
-## 5. Arquivos que não devem ir para o Git
+## 6. Arquivos que não devem ir para o Git
 
 O `.gitignore` já deixa fora:
 

@@ -119,7 +119,7 @@
         <h2>Cadastro de Usuários</h2>
         <div class="field"><label>Nome</label><input id="novoSolicitanteNome"></div>
         <div class="field"><label>Usuário (login)</label><input id="novoSolicitanteLogin"></div>
-        <div class="field"><label>Senha</label><input id="novoSolicitanteSenha" type="text"></div>
+        <div class="field"><label>Senha</label><input id="novoSolicitanteSenha" type="password" minlength="8" autocomplete="new-password"></div>
         <div class="field"><label>Código de Referência/ID Funcional</label><input id="novoSolicitanteCodigo"></div>
         <div class="field"><label>Unidade</label><select id="novoSolicitanteUnidade"></select></div>
         <button class="primary" id="btnAddSolicitante">Cadastrar solicitante</button>
@@ -134,7 +134,7 @@
         <h2>Cadastro de Entregadores</h2>
         <div class="field"><label>Nome</label><input id="novoEntregadorNome"></div>
         <div class="field"><label>Usuário (login)</label><input id="novoEntregadorLogin"></div>
-        <div class="field"><label>Senha</label><input id="novoEntregadorSenha" type="text"></div>
+        <div class="field"><label>Senha</label><input id="novoEntregadorSenha" type="password" minlength="8" autocomplete="new-password"></div>
         <div class="field"><label>Código de Referência/ID Funcional</label><input id="novoEntregadorCodigo"></div>
         <div class="field"><label>Tipo de veículo</label><select id="novoEntregadorVeiculo"><option value="moto">Moto</option><option value="carro">Carro</option></select></div>
         <button class="primary" id="btnAddEntregador">Cadastrar entregador</button>
@@ -148,7 +148,7 @@
       <div class="card">
         <h2>Alterar senhas</h2>
         <div class="field"><label>Login</label><select id="resetUsuario"></select></div>
-        <div class="field"><label>Nova senha</label><input id="resetSenha" type="text" autocomplete="off" placeholder="Informe uma senha provisória"></div>
+        <div class="field"><label>Nova senha</label><input id="resetSenha" type="password" minlength="8" autocomplete="new-password" placeholder="Informe uma senha provisória"></div>
         <button class="primary" id="btnResetSenha">Atualizar senha</button>
       </div>
       <div class="card">
@@ -251,7 +251,7 @@ function cardPedido(p, mapa=false){
   return `<div class="item">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)} · <span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span> ${p.entregador?' · '+escapeHtml(p.entregador):''}</div>
-    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span> <span class="tag tipo">${escapeHtml(p.tipo)}</span></div>
+    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span>${p.urgencia_mista?'<span class="tag urgente">PRIORIDADES MISTAS</span>':''} <span class="tag tipo">${escapeHtml(p.tipo)}</span></div>
     ${operadorLinha(p)}
     <div class="meta">${slaLinha(p)}</div>
     ${linhaTempo(p)}
@@ -262,6 +262,7 @@ function cardFila(p){
   return `<div class="item">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)} · Veículo: <strong>${veiculoLabel(p.tipo_veiculo)}</strong></div>
+    ${p.urgencia_mista?'<div><span class="tag urgente">PRIORIDADES MISTAS</span></div>':''}
     ${operadorLinha(p)}
     <div class="meta">${slaLinha(p)}</div>${linhaTempo(p)}<div class="chips" id="chips-${p.id}"></div>
   </div>`;
@@ -341,7 +342,7 @@ $('btnAddEntregador').onclick=async()=>{try{await cadastrarUsuario({nome:$('novo
 $('btnResetSenha').onclick=async()=>{
   const id = parseInt($('resetUsuario').value);
   const senha = $('resetSenha').value.trim();
-  if(!id || senha.length < 4){toast('Informe o login e uma senha com ao menos 4 caracteres','danger');return;}
+  if(!id || senha.length < 8){toast('Informe o login e uma senha com ao menos 8 caracteres','danger');return;}
   try{
     await api(`/despacho/api/usuarios/${id}/senha`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha})});
     $('resetSenha').value='';

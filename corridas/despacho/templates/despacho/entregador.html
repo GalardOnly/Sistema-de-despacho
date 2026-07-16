@@ -127,7 +127,7 @@ function cardPedido(p){
   return `<div class="item">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)}</div>
-    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span><span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
+    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span>${p.urgencia_mista?'<span class="tag urgente">PRIORIDADES MISTAS</span>':''}<span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
     <div class="meta">${slaLinha(p)}</div>
     ${STATUS_GPS.includes(p.status)?'<div class="gps" id="gpsStatus">GPS ativo · atualizações a cada 15 segundos</div>':''}
     ${p.status==='despachado'&&atrasado?`<div class="field"><label>Justificativa de atraso</label><textarea id="justificativa-atraso-${p.id}" data-justificativa-atraso="${p.id}" rows="3" placeholder="Justificativa de atraso obrigatória...">${escapeHtml(justificativaRascunho(p.id))}</textarea></div>`:''}

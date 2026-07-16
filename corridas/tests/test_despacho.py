@@ -2,9 +2,11 @@ import sqlite3
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 CORRIDAS_DIR = Path(__file__).resolve().parents[1]
@@ -108,6 +110,7 @@ class MigrationTests(unittest.TestCase):
                 "ts_cancelado",
                 "tipo_veiculo",
                 "sla_limite_min",
+                "urgencia_mista",
                 "justificativa_atraso",
             }.issubset(order_columns)
         )
@@ -281,7 +284,13 @@ class DispatchApiTests(unittest.TestCase):
             sess["desp_unidade_id"] = unidade_id
             sess["desp_csrf_token"] = "csrf-test-token"
 
-    def create_order(self, urgencia="rotina", tipo_veiculo="moto", operador_nome="Maria Operadora"):
+    def create_order(
+        self,
+        urgencia="rotina",
+        tipo_veiculo="moto",
+        operador_nome="Maria Operadora",
+        urgencia_mista=False,
+    ):
         self.login("solicitante")
         response = self.client.post(
             "/despacho/api/pedidos",
@@ -289,6 +298,7 @@ class DispatchApiTests(unittest.TestCase):
                 "destino_id": self.destino_id,
                 "tipo": "Sangue",
                 "urgencia": urgencia,
+                "urgencia_mista": urgencia_mista,
                 "tipo_veiculo": tipo_veiculo,
                 "operador_nome": operador_nome,
             },
@@ -303,6 +313,60 @@ class DispatchApiTests(unittest.TestCase):
             json={"entregador_id": self.entregador_id},
         )
 
+    def concurrent_admin_client(self):
+        client = self.app.test_client()
+        with client.session_transaction() as sess:
+            sess["desp_uid"] = self.admin_id
+            sess["desp_nome"] = "Administrador"
+            sess["desp_papel"] = "admin"
+            sess["desp_unidade_id"] = None
+            sess["desp_csrf_token"] = "csrf-test-token"
+        return client
+
+    def run_concurrent_dispatches(self, assignments):
+        barrier = threading.Barrier(len(assignments))
+        local_state = threading.local()
+        original_now = despacho.agora_ms
+        responses = []
+        errors = []
+        result_lock = threading.Lock()
+
+        def synchronized_now():
+            if not getattr(local_state, "dispatch_waited", False):
+                local_state.dispatch_waited = True
+                barrier.wait(timeout=10)
+            return original_now()
+
+        def dispatch(client, pedido_id, entregador_id):
+            try:
+                response = client.post(
+                    f"/despacho/api/pedidos/{pedido_id}/despachar",
+                    json={"entregador_id": entregador_id},
+                    headers={"X-CSRF-Token": "csrf-test-token"},
+                )
+                with result_lock:
+                    responses.append(response)
+            except Exception as exc:
+                with result_lock:
+                    errors.append(exc)
+
+        with patch.object(despacho, "agora_ms", side_effect=synchronized_now):
+            threads = [
+                threading.Thread(
+                    target=dispatch,
+                    args=(self.concurrent_admin_client(), pedido_id, entregador_id),
+                )
+                for pedido_id, entregador_id in assignments
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=15)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual([], errors)
+        return responses
+
     def test_default_units_are_created_for_mvp(self):
         self.login("admin")
         response = self.client.get("/despacho/api/unidades")
@@ -314,12 +378,26 @@ class DispatchApiTests(unittest.TestCase):
 
     def test_user_registration_requires_reference_code_and_driver_vehicle(self):
         self.login("admin")
+        short_password = self.client.post(
+            "/despacho/api/usuarios",
+            json={
+                "nome": "Senha Curta",
+                "username": "senha_curta",
+                "senha": "1234567",
+                "papel": "solicitante",
+                "unidade_id": self.origem_id,
+                "codigo_ref": "SOL-CURTA",
+            },
+        )
+        self.assertEqual(400, short_password.status_code)
+        self.assertIn("8 caracteres", short_password.get_json()["error"])
+
         missing_ref = self.client.post(
             "/despacho/api/usuarios",
             json={
                 "nome": "Novo Solicitante",
                 "username": "novo_sol",
-                "senha": "123",
+                "senha": "senha123",
                 "papel": "solicitante",
                 "unidade_id": self.origem_id,
             },
@@ -331,7 +409,7 @@ class DispatchApiTests(unittest.TestCase):
             json={
                 "nome": "Novo Solicitante",
                 "username": "novo_sol",
-                "senha": "123",
+                "senha": "senha123",
                 "papel": "solicitante",
                 "unidade_id": self.origem_id,
                 "codigo_ref": "SOL-999",
@@ -344,7 +422,7 @@ class DispatchApiTests(unittest.TestCase):
             json={
                 "nome": "Novo Entregador",
                 "username": "novo_ent",
-                "senha": "123",
+                "senha": "senha123",
                 "papel": "entregador",
                 "codigo_ref": "ENT-999",
             },
@@ -356,7 +434,7 @@ class DispatchApiTests(unittest.TestCase):
             json={
                 "nome": "Novo Entregador",
                 "username": "novo_ent",
-                "senha": "123",
+                "senha": "senha123",
                 "papel": "entregador",
                 "codigo_ref": "ENT-999",
                 "tipo_veiculo": "carro",
@@ -369,7 +447,7 @@ class DispatchApiTests(unittest.TestCase):
             json={
                 "nome": "Duplicado",
                 "username": "duplicado",
-                "senha": "123",
+                "senha": "senha123",
                 "papel": "solicitante",
                 "unidade_id": self.origem_id,
                 "codigo_ref": "ENT-999",
@@ -408,6 +486,28 @@ class DispatchApiTests(unittest.TestCase):
         self.assertRegex(pedido["protocolo"], r"^COL-\d{5}$")
         self.assertEqual("moto", pedido["tipo_veiculo"])
         self.assertEqual(720, pedido["sla_limite_min"])
+        self.assertFalse(pedido["urgencia_mista"])
+
+    def test_mixed_urgencies_use_one_order_with_the_highest_selected_sla(self):
+        pedido = self.create_order(urgencia="urgente", urgencia_mista=True)
+
+        self.assertTrue(pedido["urgencia_mista"])
+        self.assertEqual("urgente", pedido["urgencia"])
+        self.assertEqual(40, pedido["sla_limite_min"])
+
+        self.login("solicitante")
+        invalid = self.client.post(
+            "/despacho/api/pedidos",
+            json={
+                "destino_id": self.destino_id,
+                "tipo": "Sangue",
+                "urgencia": "rotina",
+                "urgencia_mista": "sim",
+                "tipo_veiculo": "moto",
+                "operador_nome": "Operador Inválido",
+            },
+        )
+        self.assertEqual(400, invalid.status_code)
 
     def test_operator_name_is_required_and_internal_code_stays_hidden(self):
         self.login("solicitante")
@@ -539,6 +639,74 @@ class DispatchApiTests(unittest.TestCase):
         disponibilidade = self.client.get("/despacho/api/disponibilidade").get_json()
         self.assertTrue(disponibilidade["disponivel"])
         self.assertFalse(disponibilidade["ocupado"])
+
+    def test_concurrent_dispatch_of_same_order_has_only_one_winner(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            "UPDATE usuarios SET tipo_veiculo='moto', disponivel=1 WHERE id=?",
+            (self.outro_entregador_id,),
+        )
+        con.commit()
+        con.close()
+        pedido = self.create_order()
+
+        responses = self.run_concurrent_dispatches(
+            [
+                (pedido["id"], self.entregador_id),
+                (pedido["id"], self.outro_entregador_id),
+            ]
+        )
+
+        self.assertEqual([200, 409], sorted(response.status_code for response in responses))
+        con = sqlite3.connect(self.db_path)
+        assigned_driver = con.execute(
+            "SELECT entregador_id FROM pedidos WHERE id=?", (pedido["id"],)
+        ).fetchone()[0]
+        availability = dict(
+            con.execute(
+                "SELECT id, disponivel FROM usuarios WHERE id IN (?,?)",
+                (self.entregador_id, self.outro_entregador_id),
+            ).fetchall()
+        )
+        notification_count = con.execute(
+            "SELECT COUNT(*) FROM notificacoes WHERE pedido_id=? AND tipo='despacho'",
+            (pedido["id"],),
+        ).fetchone()[0]
+        con.close()
+        self.assertEqual(0, availability[assigned_driver])
+        unassigned_driver = (
+            self.outro_entregador_id
+            if assigned_driver == self.entregador_id
+            else self.entregador_id
+        )
+        self.assertEqual(1, availability[unassigned_driver])
+        self.assertEqual(2, notification_count)
+
+    def test_concurrent_orders_cannot_reserve_same_driver(self):
+        first = self.create_order()
+        second = self.create_order(operador_nome="Outro operador")
+
+        responses = self.run_concurrent_dispatches(
+            [
+                (first["id"], self.entregador_id),
+                (second["id"], self.entregador_id),
+            ]
+        )
+
+        self.assertEqual([200, 409], sorted(response.status_code for response in responses))
+        con = sqlite3.connect(self.db_path)
+        active_count = con.execute(
+            "SELECT COUNT(*) FROM pedidos WHERE entregador_id=? "
+            "AND status='aguardando_entregador'",
+            (self.entregador_id,),
+        ).fetchone()[0]
+        waiting_count = con.execute(
+            "SELECT COUNT(*) FROM pedidos WHERE id IN (?,?) AND status='solicitado'",
+            (first["id"], second["id"]),
+        ).fetchone()[0]
+        con.close()
+        self.assertEqual(1, active_count)
+        self.assertEqual(1, waiting_count)
 
     def test_blocks_unavailable_or_busy_driver_and_availability_change_while_active(self):
         primeiro = self.create_order()
@@ -1020,6 +1188,10 @@ class DispatchApiTests(unittest.TestCase):
             "tipoOutroBox",
             "tipoOutro",
             "tipo_outro",
+            "urgenciaMista",
+            "Esta coleta reúne exames com urgências diferentes",
+            "Maior nível de urgência presente",
+            "PRIORIDADES MISTAS",
             "/api/tipos-exame",
             "notifButton",
             "notifBadge",

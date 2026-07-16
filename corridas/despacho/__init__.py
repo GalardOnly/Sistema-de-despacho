@@ -6,7 +6,6 @@ import hmac
 import math
 import os
 import secrets
-import sqlite3
 import time
 from datetime import datetime, time as dt_time
 from functools import wraps
@@ -16,8 +15,10 @@ from flask import Blueprint, g, jsonify, redirect, render_template, request, ses
 from werkzeug.security import check_password_hash, generate_password_hash
 
 if "." in (__package__ or ""):
+    from ..database import ERROS_INTEGRIDADE, abrir_conexao, banco_postgres_configurado
     from ..security import limitar_falhas_login
 else:
+    from database import ERROS_INTEGRIDADE, abrir_conexao, banco_postgres_configurado
     from security import limitar_falhas_login
 
 
@@ -91,8 +92,7 @@ despacho_bp = Blueprint(
 
 def get_db_desp():
     if "db_desp" not in g:
-        g.db_desp = sqlite3.connect(DESP_DB_PATH)
-        g.db_desp.row_factory = sqlite3.Row
+        g.db_desp = abrir_conexao(DESP_DB_PATH)
     return g.db_desp
 
 
@@ -106,6 +106,8 @@ def verificar_db_desp():
 def close_db_desp(exc):
     d = g.pop("db_desp", None)
     if d is not None:
+        if exc is not None:
+            d.rollback()
         d.close()
 
 
@@ -121,7 +123,10 @@ def _normalizar_veiculo(valor, padrao=None):
 
 
 def init_db_desp():
-    con = sqlite3.connect(DESP_DB_PATH)
+    if banco_postgres_configurado():
+        return _init_db_postgres()
+
+    con = abrir_conexao(DESP_DB_PATH)
     con.executescript(
         """
         CREATE TABLE IF NOT EXISTS unidades(
@@ -150,6 +155,7 @@ def init_db_desp():
             destino_id  INTEGER NOT NULL REFERENCES unidades(id),
             tipo        TEXT NOT NULL,
             urgencia    TEXT NOT NULL,
+            urgencia_mista INTEGER NOT NULL DEFAULT 0,
             tipo_veiculo TEXT,
             sla_limite_min INTEGER,
             status      TEXT NOT NULL DEFAULT 'solicitado',
@@ -251,6 +257,7 @@ def init_db_desp():
         ("ts_cancelado", "INTEGER"),
         ("tipo_veiculo", "TEXT"),
         ("sla_limite_min", "INTEGER"),
+        ("urgencia_mista", "INTEGER NOT NULL DEFAULT 0"),
         ("justificativa_atraso", "TEXT"),
         ("operador_id", "INTEGER REFERENCES operadores_solicitante(id)"),
     ):
@@ -260,6 +267,48 @@ def init_db_desp():
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_chat_unidade_ts ON chat_mensagens(unidade_id, ts)"
     )
+
+    try:
+        _popular_dados_iniciais(con)
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def _validar_schema_postgres(con):
+    try:
+        versao = con.execute(
+            "SELECT version FROM schema_migrations WHERE version=?",
+            ("003_despacho_atomico",),
+        ).fetchone()
+    except Exception as exc:
+        raise RuntimeError(
+            "O schema do Supabase ainda não foi criado. Execute scripts/init_supabase.py antes de iniciar a aplicação."
+        ) from exc
+    if not versao:
+        raise RuntimeError(
+            "A migration 003_despacho_atomico não foi aplicada no Supabase. "
+            "Execute scripts/init_supabase.py."
+        )
+
+
+def _init_db_postgres():
+    con = abrir_conexao(DESP_DB_PATH)
+    try:
+        _validar_schema_postgres(con)
+        _popular_dados_iniciais(con)
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def _popular_dados_iniciais(con):
 
     default_units = ["Santa Casa", "Unimed-Lar", "Unimed-Camu 1", "Unimed-Camu 2", "Unimed Farmais"]
     for nome in default_units:
@@ -288,14 +337,13 @@ def init_db_desp():
             (meta["sla_min"], urgencia),
         )
     for row in con.execute("SELECT id FROM pedidos WHERE protocolo IS NULL OR protocolo=''").fetchall():
-        con.execute("UPDATE pedidos SET protocolo=? WHERE id=?", (_protocolo(row[0]), row[0]))
+        con.execute("UPDATE pedidos SET protocolo=? WHERE id=?", (_protocolo(row["id"]), row["id"]))
 
-    existe = con.execute("SELECT COUNT(*) AS n FROM usuarios").fetchone()[0]
+    existe = con.execute("SELECT COUNT(*) AS n FROM usuarios").fetchone()["n"]
     if existe == 0:
         try:
             senha_admin = senha_admin_inicial_configurada()
         except RuntimeError:
-            con.close()
             raise
         con.execute(
             "INSERT INTO usuarios(nome,username,senha_hash,papel,unidade_id) VALUES(?,?,?,?,?)",
@@ -311,10 +359,6 @@ def init_db_desp():
         WHERE unidade_id IS NULL
         """
     )
-
-    con.commit()
-    con.close()
-
 
 def agora_ms():
     return int(time.time() * 1000)
@@ -534,6 +578,7 @@ def linha_pedido(con, r):
         "destino": _nome_unidade(con, d["destino_id"]),
         "tipo": d["tipo"],
         "urgencia": d["urgencia"],
+        "urgencia_mista": bool(d.get("urgencia_mista")),
         "urgencia_label": URGENCIA_META.get(d["urgencia"], {}).get("label", d["urgencia"]),
         "tipo_veiculo": _normalizar_veiculo(d.get("tipo_veiculo"), "moto"),
         "sla_limite_min": d.get("sla_limite_min") or _sla_limite_min(d["urgencia"]),
@@ -567,6 +612,30 @@ def _entregador_ocupado(con, entregador_id):
             (entregador_id, *STATUS_ATIVOS_ENTREGADOR),
         ).fetchone()
         is not None
+    )
+
+
+def _reservar_entregador(con, entregador_id):
+    placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
+    resultado = con.execute(
+        "UPDATE usuarios SET disponivel=0 "
+        "WHERE id=? AND papel='entregador' AND ativo=1 AND disponivel=1 "
+        "AND NOT EXISTS ("
+        f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders})"
+        ")",
+        (entregador_id, entregador_id, *STATUS_ATIVOS_ENTREGADOR),
+    )
+    return resultado.rowcount == 1
+
+
+def _liberar_entregador_se_sem_pedido_ativo(con, entregador_id):
+    placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
+    con.execute(
+        "UPDATE usuarios SET disponivel=1 "
+        "WHERE id=? AND NOT EXISTS ("
+        f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders})"
+        ")",
+        (entregador_id, entregador_id, *STATUS_ATIVOS_ENTREGADOR),
     )
 
 
@@ -914,7 +983,7 @@ def api_unidades():
         try:
             con.execute("INSERT INTO unidades(nome) VALUES(?)", (nome,))
             con.commit()
-        except sqlite3.IntegrityError:
+        except ERROS_INTEGRIDADE:
             return jsonify(error="unidade já cadastrada"), 400
     rows = con.execute("SELECT id, nome FROM unidades ORDER BY nome").fetchall()
     return jsonify([dict(r) for r in rows])
@@ -936,6 +1005,8 @@ def api_usuarios():
 
         if not (nome and username and senha and papel in PAPEIS):
             return jsonify(error="dados incompletos"), 400
+        if len(senha) < 8:
+            return jsonify(error="senha deve ter pelo menos 8 caracteres"), 400
         if papel != "admin" and not codigo_ref:
             return jsonify(error="código de referência obrigatório"), 400
         if codigo_ref:
@@ -969,7 +1040,7 @@ def api_usuarios():
                 ),
             )
             con.commit()
-        except sqlite3.IntegrityError:
+        except ERROS_INTEGRIDADE:
             return jsonify(error="username já existe"), 400
 
     rows = con.execute(
@@ -1065,8 +1136,8 @@ def api_alterar_senha_usuario(uid):
     con = get_db_desp()
     d = request.get_json(silent=True) or {}
     senha = (d.get("senha") or d.get("nova_senha") or "").strip()
-    if len(senha) < 4:
-        return jsonify(error="senha deve ter pelo menos 4 caracteres"), 400
+    if len(senha) < 8:
+        return jsonify(error="senha deve ter pelo menos 8 caracteres"), 400
 
     usuario = con.execute(
         "SELECT id, username FROM usuarios WHERE id=? AND ativo=1", (uid,)
@@ -1218,6 +1289,7 @@ def api_pedidos():
         d = request.get_json(force=True)
         destino_id = d.get("destino_id")
         urgencia = d.get("urgencia")
+        urgencia_mista = d.get("urgencia_mista", False)
         tipo_veiculo = _normalizar_veiculo(d.get("tipo_veiculo"), "")
         origem_id = session["desp_unidade_id"]
         operador = _buscar_ou_criar_operador(con, origem_id, d.get("operador_nome"))
@@ -1225,6 +1297,8 @@ def api_pedidos():
             return jsonify(error="nome de quem solicita é obrigatório"), 400
         if urgencia not in URGENCIAS:
             return jsonify(error="urgência inválida"), 400
+        if not isinstance(urgencia_mista, bool):
+            return jsonify(error="informação de urgências diferentes inválida"), 400
         if tipo_veiculo not in TIPOS_VEICULO:
             return jsonify(error="tipo de veículo obrigatório"), 400
         if not destino_id or int(destino_id) == origem_id:
@@ -1233,13 +1307,15 @@ def api_pedidos():
         if not tipo:
             return jsonify(error="tipo de coleta inválido"), 400
         cur = con.execute(
-            "INSERT INTO pedidos(origem_id,destino_id,tipo,urgencia,tipo_veiculo,sla_limite_min,"
-            "status,criado_por,operador_id,ts_solicitado) VALUES(?,?,?,?,?,?, 'solicitado', ?, ?, ?)",
+            "INSERT INTO pedidos(origem_id,destino_id,tipo,urgencia,urgencia_mista,tipo_veiculo,"
+            "sla_limite_min,status,criado_por,operador_id,ts_solicitado) "
+            "VALUES(?,?,?,?,?,?,?, 'solicitado', ?, ?, ?)",
             (
                 origem_id,
                 destino_id,
                 tipo,
                 urgencia,
+                int(urgencia_mista),
                 tipo_veiculo,
                 _sla_limite_min(urgencia),
                 session["desp_uid"],
@@ -1292,12 +1368,21 @@ def api_despachar(pid):
     ):
         return jsonify(error="entregador incompatível com o veículo solicitado"), 400
     agora = agora_ms()
-    con.execute(
-        "UPDATE pedidos SET status='aguardando_entregador', entregador_id=?, "
-        "ts_aceito_admin=? WHERE id=?",
-        (entregador_id, agora, pid),
-    )
-    con.execute("UPDATE usuarios SET disponivel=0 WHERE id=?", (entregador_id,))
+    if not _reservar_entregador(con, entregador_id):
+        con.rollback()
+        return jsonify(error="entregador indisponível ou em outra entrega"), 409
+    try:
+        atualizado = con.execute(
+            "UPDATE pedidos SET status='aguardando_entregador', entregador_id=?, "
+            "ts_aceito_admin=? WHERE id=? AND status='solicitado'",
+            (entregador_id, agora, pid),
+        )
+    except ERROS_INTEGRIDADE:
+        con.rollback()
+        return jsonify(error="entregador indisponível ou pedido já despachado"), 409
+    if atualizado.rowcount != 1:
+        con.rollback()
+        return jsonify(error="pedido não está mais aguardando despacho"), 409
     pedido = _pedido_ou_404(con, pid)
     _notificar_despacho(con, pedido)
     con.commit()
@@ -1315,10 +1400,14 @@ def api_aceitar(pid):
         return jsonify(error="pedido não é seu"), 403
     if r["status"] != "aguardando_entregador":
         return jsonify(error="estado inválido para aceite"), 400
-    con.execute(
-        "UPDATE pedidos SET status='em_rota_retirada', ts_aceito_entregador=? WHERE id=?",
-        (agora_ms(), pid),
+    atualizado = con.execute(
+        "UPDATE pedidos SET status='em_rota_retirada', ts_aceito_entregador=? "
+        "WHERE id=? AND entregador_id=? AND status='aguardando_entregador'",
+        (agora_ms(), pid, session["desp_uid"]),
     )
+    if atualizado.rowcount != 1:
+        con.rollback()
+        return jsonify(error="pedido foi atualizado por outra operação"), 409
     pedido = _pedido_ou_404(con, pid)
     _notificar_entregador_a_caminho(con, pedido)
     con.commit()
@@ -1337,10 +1426,14 @@ def api_retirada(pid):
     if r["status"] not in ("em_rota_retirada", "em_rota"):
         return jsonify(error="estado inválido para retirada"), 400
     agora = agora_ms()
-    con.execute(
-        "UPDATE pedidos SET status='despachado', ts_coletado=?, ts_despachado=? WHERE id=?",
-        (agora, agora, pid),
+    atualizado = con.execute(
+        "UPDATE pedidos SET status='despachado', ts_coletado=?, ts_despachado=? "
+        "WHERE id=? AND entregador_id=? AND status IN ('em_rota_retirada','em_rota')",
+        (agora, agora, pid, session["desp_uid"]),
     )
+    if atualizado.rowcount != 1:
+        con.rollback()
+        return jsonify(error="pedido foi atualizado por outra operação"), 409
     pedido = _pedido_ou_404(con, pid)
     _notificar_retirada(con, pedido)
     con.commit()
@@ -1364,12 +1457,16 @@ def api_entrega(pid):
     if sla["atrasado"] and not (justificativa or r["justificativa_atraso"]):
         return jsonify(error="justificativa de atraso obrigatória"), 400
     agora = agora_ms()
-    con.execute(
-        "UPDATE pedidos SET status='entregue', ts_entregue=?, justificativa_atraso=COALESCE(?, justificativa_atraso) "
-        "WHERE id=?",
-        (agora, justificativa or None, pid),
+    atualizado = con.execute(
+        "UPDATE pedidos SET status='entregue', ts_entregue=?, "
+        "justificativa_atraso=COALESCE(?, justificativa_atraso) "
+        "WHERE id=? AND entregador_id=? AND status IN ('despachado','coletado')",
+        (agora, justificativa or None, pid, session["desp_uid"]),
     )
-    con.execute("UPDATE usuarios SET disponivel=1 WHERE id=?", (session["desp_uid"],))
+    if atualizado.rowcount != 1:
+        con.rollback()
+        return jsonify(error="pedido foi atualizado por outra operação"), 409
+    _liberar_entregador_se_sem_pedido_ativo(con, session["desp_uid"])
     pedido = _pedido_ou_404(con, pid)
     _notificar_entrega(con, pedido)
     con.commit()
@@ -1445,14 +1542,26 @@ def api_cancelar(pid):
     motivo = (request.get_json(silent=True) or {}).get("motivo")
     if r["status"] in ("entregue", "cancelado"):
         return jsonify(error="pedido já foi finalizado"), 400
-    con.execute(
-        "UPDATE pedidos SET status='cancelado', motivo_cancelamento=?, ts_cancelado=? WHERE id=?",
-        (motivo, agora_ms(), pid),
-    )
-    if r["entregador_id"]:
-        con.execute("UPDATE usuarios SET disponivel=1 WHERE id=?", (r["entregador_id"],))
+    if session["desp_papel"] == "solicitante":
+        atualizado = con.execute(
+            "UPDATE pedidos SET status='cancelado', motivo_cancelamento=?, ts_cancelado=? "
+            "WHERE id=? AND origem_id=? AND status='solicitado'",
+            (motivo, agora_ms(), pid, session["desp_unidade_id"]),
+        )
+    else:
+        atualizado = con.execute(
+            "UPDATE pedidos SET status='cancelado', motivo_cancelamento=?, ts_cancelado=? "
+            "WHERE id=? AND status NOT IN ('entregue','cancelado')",
+            (motivo, agora_ms(), pid),
+        )
+    if atualizado.rowcount != 1:
+        con.rollback()
+        return jsonify(error="pedido foi atualizado por outra operação"), 409
+    pedido = _pedido_ou_404(con, pid)
+    if pedido["entregador_id"]:
+        _liberar_entregador_se_sem_pedido_ativo(con, pedido["entregador_id"])
     con.commit()
-    return jsonify(linha_pedido(con, _pedido_ou_404(con, pid)))
+    return jsonify(linha_pedido(con, pedido))
 
 
 @despacho_bp.route("/api/relatorios/resumo-diario")
@@ -1531,7 +1640,7 @@ def api_chat_resumo():
         LEFT JOIN unidades un ON un.id = c.unidade_id
         WHERE c.unidade_id IS NOT NULL
         GROUP BY c.unidade_id, un.nome
-        ORDER BY ultimo_ts DESC, unidade COLLATE NOCASE
+        ORDER BY ultimo_ts DESC, LOWER(unidade)
         """
     ).fetchall()
     return jsonify(

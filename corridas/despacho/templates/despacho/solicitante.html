@@ -38,6 +38,7 @@
   .field{margin-bottom:12px}.field label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:6px}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13.5px Inter;color:var(--ink)}
   .choice-row{display:flex;gap:7px;margin-bottom:16px}.choice-row button{flex:1;border:1px solid var(--border);background:#fff;color:var(--muted);font-weight:800;font-size:11px;padding:10px 7px;border-radius:9px;cursor:pointer}
   .choice-row button.on{border-color:var(--primary);box-shadow:0 0 0 2px rgba(22,128,58,.12)}.choice-row button.on.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#b7cdf6}.choice-row button.on.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#efd198}.choice-row button.on.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#efb6b1}.choice-row button.on.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#b6dfc5}
+  .mixed-priority{display:flex;align-items:flex-start;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;margin-bottom:12px;cursor:pointer}.mixed-priority:has(input:checked){background:var(--amber-bg);border-color:#efd198}.mixed-priority input{width:17px;height:17px;margin-top:2px;accent-color:var(--primary);flex:0 0 auto}.mixed-priority strong{display:block;font-size:12px;color:var(--ink);margin-bottom:3px}.mixed-priority span{display:block;font-size:10.5px;line-height:1.4;color:var(--muted)}
   .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:9px;padding:12px;font-weight:800;font-size:14px;cursor:pointer}.primary:hover{background:var(--primary-dark)}
   .secondary{width:100%;border:1px solid var(--border);background:#fff;color:var(--primary);border-radius:9px;padding:10px 11px;font-weight:800;font-size:12px;cursor:pointer}.secondary:hover{border-color:var(--primary);background:var(--green-bg)}.link-button{border:none;background:transparent;color:var(--primary);font-weight:800;cursor:pointer}
   .rowlist{display:flex;flex-direction:column;gap:9px}.pedidos-scroll{max-height:620px;overflow-y:auto;padding-right:4px}.item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:13px}.item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.proto{font-weight:800;font-size:13px}.route{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4}
@@ -81,6 +82,13 @@
           <input id="operadorNome" autocomplete="off" placeholder="Digite seu nome" required>
         </div>
         <div class="field"><label>Destino</label><select id="selDestino"></select></div>
+        <label class="mixed-priority" for="urgenciaMista">
+          <input id="urgenciaMista" type="checkbox">
+          <span>
+            <strong>Esta coleta reúne exames com urgências diferentes</strong>
+            <span>Marque quando houver prioridades misturadas no mesmo envio. Use abaixo a maior urgência presente.</span>
+          </span>
+        </label>
         <div class="field"><label>Tipo de exame</label><select id="selTipo"></select></div>
         <div class="field hidden" id="tipoOutroBox">
           <label>Nome do que será coletado</label>
@@ -91,7 +99,7 @@
           <button class="on vehicle" data-vehicle="moto">Moto</button>
           <button data-vehicle="carro">Carro</button>
         </div>
-        <label style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Nível de urgência</label>
+        <label id="urgenciaLabel" style="display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:6px">Nível de urgência</label>
         <div class="choice-row" id="urgRow"></div>
         <button class="primary" id="btnSolicitar">Solicitar coleta</button>
       </div>
@@ -246,6 +254,7 @@ function renderEstoqueMvp(){
 
 function setupForm(){
   $('urgRow').innerHTML = URGENCIAS.map(u=>`<button class="${u.id===urgenciaSelecionada?'on '+u.id:''}" data-urg="${u.id}">${u.label}</button>`).join('');
+  $('urgenciaLabel').textContent = $('urgenciaMista').checked ? 'Maior nível de urgência presente' : 'Nível de urgência';
 }
 function renderTiposColeta(valorPreferido){
   $('selTipo').innerHTML = tiposColeta.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
@@ -262,6 +271,7 @@ function atualizarTipoOutro(){
   if(!outro) $('tipoOutro').value = '';
 }
 $('urgRow').addEventListener('click', e=>{const u=e.target.dataset.urg;if(!u)return;urgenciaSelecionada=u;setupForm();});
+$('urgenciaMista').addEventListener('change', setupForm);
 $('selTipo').addEventListener('change', atualizarTipoOutro);
 $('veiculoRow').addEventListener('click', e=>{
   const v=e.target.dataset.vehicle;if(!v)return;veiculoSelecionado=v;
@@ -279,10 +289,12 @@ $('btnSolicitar').addEventListener('click', async () => {
   const tipoSelecionado = $('selTipo').value;
   const tipoOutro = $('tipoOutro').value.trim();
   if(tipoSelecionado === 'Outro' && !tipoOutro){toast('Informe o nome do que será coletado','danger');return;}
-  const body = {destino_id:parseInt($('selDestino').value),tipo:tipoSelecionado,tipo_outro:tipoOutro,urgencia:urgenciaSelecionada,tipo_veiculo:veiculoSelecionado,operador_nome:operadorNome};
+  const body = {destino_id:parseInt($('selDestino').value),tipo:tipoSelecionado,tipo_outro:tipoOutro,urgencia:urgenciaSelecionada,urgencia_mista:$('urgenciaMista').checked,tipo_veiculo:veiculoSelecionado,operador_nome:operadorNome};
   try{
     const pedido = await api('/despacho/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     toast('Pedido solicitado');
+    $('urgenciaMista').checked = false;
+    setupForm();
     await carregarTiposColeta(pedido.tipo);
     renderLista();
   }
@@ -298,7 +310,7 @@ async function renderLista(){
     <div class="item">
       <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
       <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)}</div>
-      <div><span class="tag tipo">${escapeHtml(p.tipo)}</span><span class="tag ${p.urgencia}">${escapeHtml(p.urgencia_label)}</span><span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
+      <div><span class="tag tipo">${escapeHtml(p.tipo)}</span><span class="tag ${p.urgencia}">${escapeHtml(p.urgencia_label)}</span>${p.urgencia_mista?'<span class="tag urgente">PRIORIDADES MISTAS</span>':''}<span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
       <div class="meta"><span><strong>Solicitado por</strong> ${p.operador_nome?escapeHtml(p.operador_nome):'cadastro antigo não informado'}</span></div>
       <div class="public-times"><span><strong>Solicitado às</strong> ${fmtHora(p.ts.solicitado)}</span><span><strong>Entregue às</strong> ${fmtHora(p.ts.entregue)}</span><span>${slaLinha(p)}</span></div>
       ${STATUS_MAPA.includes(p.status)?`<div class="map" id="map-${p.id}"></div><div class="map-meta" id="map-meta-${p.id}">Aguardando localização...</div>`:''}

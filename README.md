@@ -18,12 +18,16 @@ MVP em Flask + SQLite para despacho de coletas de exames, com perfis de administ
 - Justificativa obrigatória para atraso fora do SLA.
 - Relatórios de resumo diário e inconformidades mensais.
 - Chat interno entre solicitante e administrador.
+- Proteção CSRF nas APIs mutáveis e limitação de falhas no login.
+- Headers de segurança, cookies protegidos e respostas sem cache.
+- Logs técnicos em JSON com request ID e tratamento seguro de erros internos.
 
 ## Estrutura
 
 ```text
 corridas/
   app.py
+  security.py
   despacho/
     __init__.py
     DEPLOY.md
@@ -36,6 +40,9 @@ instance/
 logs/
 scripts/
 static/
+Dockerfile
+gunicorn.conf.py
+cloudbuild.yaml
 ```
 
 As pastas `database`, `instance`, `logs`, `scripts` e `static` ficam preparadas para próximas fases. Arquivos locais de banco, logs, ZIPs e segredos ficam fora do Git pelo `.gitignore`.
@@ -75,6 +82,39 @@ Veja as instruções em:
 ```text
 corridas/despacho/DEPLOY.md
 ```
+
+## Roadmap para produção e dados de pacientes
+
+As decisões obrigatórias antes de usar dados reais estão registradas em:
+
+```text
+docs/ROADMAP_SEGURANCA_E_PRODUCAO.md
+```
+
+O cadastro de pacientes e o estoque permanecem visuais no MVP. Não utilize dados reais de pacientes nesta fase.
+
+## Google Cloud
+
+O projeto possui uma base de homologação para Cloud Run com Docker, Gunicorn, health checks, Secret Manager e Cloud Build. Consulte:
+
+```text
+docs/GCP_DEPLOY.md
+```
+
+O deploy atual no Cloud Run é somente para homologação com dados fictícios. O SQLite é efêmero em contêineres, por isso `APP_ENV=production` permanece bloqueado até a migração para Cloud SQL PostgreSQL.
+
+Para validar o contêiner localmente:
+
+```bash
+docker build -t sistema-despacho .
+docker run --rm -p 8080:8080 \
+  -e APP_SECRET="uma-chave-segura-com-mais-de-32-caracteres" \
+  -e DESPACHO_ADMIN_SENHA_INICIAL="uma-senha-inicial-forte" \
+  -e DESPACHO_COOKIE_SECURE=0 \
+  sistema-despacho
+```
+
+Depois acesse `http://localhost:8080/healthz` e `http://localhost:8080/despacho/login`.
 
 ## Testes
 

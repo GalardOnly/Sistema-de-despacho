@@ -4,9 +4,11 @@ from flask import Flask, jsonify, redirect, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 if __package__:
+    from .database import banco_postgres_configurado, usuario_postgres_runtime
     from .despacho import despacho_bp, init_db_desp, verificar_db_desp
     from .security import configurar_seguranca
 else:
+    from database import banco_postgres_configurado, usuario_postgres_runtime
     from despacho import despacho_bp, init_db_desp, verificar_db_desp
     from security import configurar_seguranca
 
@@ -51,12 +53,16 @@ def _ambiente():
 def validar_persistencia_cloud_run():
     ambiente = _ambiente()
     em_cloud_run = bool(os.environ.get("K_SERVICE"))
-    if ambiente == "production":
+    postgres = banco_postgres_configurado()
+    if ambiente == "production" and not postgres:
         raise RuntimeError(
-            "Produção bloqueada enquanto a persistência ainda usar SQLite. "
-            "Conclua a migração PostgreSQL antes de definir APP_ENV=production."
+            "Produção exige DATABASE_URL apontando para PostgreSQL."
         )
-    if em_cloud_run and not _env_bool("ALLOW_EPHEMERAL_SQLITE"):
+    if ambiente == "production" and usuario_postgres_runtime() != "despacho_app":
+        raise RuntimeError(
+            "Produção exige a role limitada despacho_app na DATABASE_URL."
+        )
+    if em_cloud_run and not postgres and not _env_bool("ALLOW_EPHEMERAL_SQLITE"):
         raise RuntimeError(
             "Cloud Run com SQLite exige ALLOW_EPHEMERAL_SQLITE=1 e deve ser usado "
             "somente em homologação com dados fictícios."
@@ -108,5 +114,13 @@ app = criar_app()
 
 
 if __name__ == "__main__":
-    app.config["SESSION_COOKIE_SECURE"] = False
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+    debug = _env_bool("FLASK_DEBUG", False)
+    if debug and _ambiente() != "development":
+        raise RuntimeError("FLASK_DEBUG só pode ser ativado em desenvolvimento.")
+    if _ambiente() == "development":
+        app.config["SESSION_COOKIE_SECURE"] = False
+    app.run(
+        debug=debug,
+        host=os.environ.get("FLASK_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
+    )
