@@ -96,9 +96,14 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         scripts = ScriptDirectory.from_config(config)
         revisions = [revision.revision for revision in scripts.walk_revisions()]
 
-        self.assertEqual(["003_despacho_atomico"], scripts.get_heads())
+        self.assertEqual(["004_revogacao_sessao"], scripts.get_heads())
         self.assertEqual(
-            ["003_despacho_atomico", "002_urgencia_mista", "001_initial"],
+            [
+                "004_revogacao_sessao",
+                "003_despacho_atomico",
+                "002_urgencia_mista",
+                "001_initial",
+            ],
             revisions,
         )
 
@@ -139,6 +144,16 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         )
         self.assertIn("HAVING COUNT(*) > 1", atomic_dispatch_migration)
         self.assertIn("003_despacho_atomico", atomic_dispatch_migration)
+
+        session_revocation_migration = (
+            PROJECT_ROOT
+            / "database"
+            / "migrations"
+            / "versions"
+            / "004_revogacao_sessao.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN IF NOT EXISTS sessao_versao", session_revocation_migration)
+        self.assertIn("004_revogacao_sessao", session_revocation_migration)
 
         role_script = (PROJECT_ROOT / "scripts" / "init_supabase.py").read_text(
             encoding="utf-8"

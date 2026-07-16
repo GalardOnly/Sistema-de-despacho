@@ -49,10 +49,18 @@ STATUS_ATIVOS_ENTREGADOR = (
 )
 STATUS_RASTREAMENTO = ("em_rota_retirada", "em_rota", "despachado", "coletado")
 STATUS_EM_ANDAMENTO = STATUS_ATIVOS_ENTREGADOR
-POSTGRES_SCHEMA_REVISION = "003_despacho_atomico"
+POSTGRES_SCHEMA_REVISION = "004_revogacao_sessao"
 SQLITE_SCHEMA_OBRIGATORIO = {
     "unidades": {"id", "nome"},
-    "usuarios": {"id", "papel", "ativo", "disponivel", "codigo_ref", "tipo_veiculo"},
+    "usuarios": {
+        "id",
+        "papel",
+        "ativo",
+        "disponivel",
+        "codigo_ref",
+        "tipo_veiculo",
+        "sessao_versao",
+    },
     "pedidos": {
         "id",
         "status",
@@ -70,6 +78,7 @@ SQLITE_SCHEMA_OBRIGATORIO = {
 }
 CSRF_SESSION_KEY = "desp_csrf_token"
 CSRF_HEADER = "X-CSRF-Token"
+SESSION_VERSION_KEY = "desp_sessao_versao"
 METODOS_COM_MUTACAO = {"POST", "PUT", "PATCH", "DELETE"}
 
 SENHAS_ADMIN_INSEGURAS = {
@@ -183,7 +192,8 @@ def init_db_desp():
             tipo_veiculo TEXT,
             indisponibilidade_justificativa TEXT,
             indisponibilidade_tipo TEXT,
-            indisponibilidade_ts INTEGER
+            indisponibilidade_ts INTEGER,
+            sessao_versao INTEGER NOT NULL DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS pedidos(
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -285,6 +295,7 @@ def init_db_desp():
         ("indisponibilidade_justificativa", "TEXT"),
         ("indisponibilidade_tipo", "TEXT"),
         ("indisponibilidade_ts", "INTEGER"),
+        ("sessao_versao", "INTEGER NOT NULL DEFAULT 1"),
     ):
         _ensure_column(con, "usuarios", column, definition)
 
@@ -884,14 +895,50 @@ def _filtro_notificacoes_sessao(alias="n"):
     ]
 
 
+def _limpar_sessao_desp():
+    for chave in (
+        "desp_uid",
+        "desp_nome",
+        "desp_papel",
+        "desp_unidade_id",
+        SESSION_VERSION_KEY,
+        CSRF_SESSION_KEY,
+    ):
+        session.pop(chave, None)
+
+
+def _sessao_desp_valida():
+    uid = session.get("desp_uid")
+    versao = session.get(SESSION_VERSION_KEY)
+    if not uid or versao is None:
+        return False
+
+    usuario = get_db_desp().execute(
+        "SELECT id,nome,papel,unidade_id,ativo,sessao_versao FROM usuarios WHERE id=?",
+        (uid,),
+    ).fetchone()
+    if not usuario or not usuario["ativo"] or usuario["sessao_versao"] != versao:
+        return False
+
+    session["desp_nome"] = usuario["nome"]
+    session["desp_papel"] = usuario["papel"]
+    session["desp_unidade_id"] = usuario["unidade_id"]
+    return True
+
+
+def _resposta_nao_autenticado():
+    _limpar_sessao_desp()
+    if request.path.startswith("/despacho/api/"):
+        return jsonify(error="não autenticado"), 401
+    return redirect(url_for("despacho.desp_login"))
+
+
 def login_required_desp(*papeis_permitidos):
     def decorator(f):
         @wraps(f)
         def wrap(*a, **k):
-            if not session.get("desp_uid"):
-                if request.path.startswith("/despacho/api/"):
-                    return jsonify(error="não autenticado"), 401
-                return redirect(url_for("despacho.desp_login"))
+            if not _sessao_desp_valida():
+                return _resposta_nao_autenticado()
             if papeis_permitidos and session.get("desp_papel") not in papeis_permitidos:
                 return jsonify(error="sem permissão para este papel"), 403
             return f(*a, **k)
@@ -947,6 +994,7 @@ def desp_login():
             session["desp_nome"] = u["nome"]
             session["desp_papel"] = u["papel"]
             session["desp_unidade_id"] = u["unidade_id"]
+            session[SESSION_VERSION_KEY] = u["sessao_versao"]
             session[CSRF_SESSION_KEY] = secrets.token_urlsafe(32)
             return redirect(url_for("despacho.desp_home"))
         return render_template("despacho/login.html", erro=erro), 401
@@ -955,8 +1003,7 @@ def desp_login():
 
 @despacho_bp.route("/logout")
 def desp_logout():
-    for k in ("desp_uid", "desp_nome", "desp_papel", "desp_unidade_id", CSRF_SESSION_KEY):
-        session.pop(k, None)
+    _limpar_sessao_desp()
     return redirect(url_for("despacho.desp_login"))
 
 
@@ -1106,6 +1153,7 @@ def api_usuario_admin(uid):
             UPDATE usuarios
             SET ativo=0,
                 disponivel=0,
+                sessao_versao=sessao_versao+1,
                 username=username || '__apagado_' || id,
                 codigo_ref=CASE
                     WHEN codigo_ref IS NULL THEN NULL
@@ -1171,7 +1219,7 @@ def api_alterar_senha_usuario(uid):
         return jsonify(error="login não encontrado"), 404
 
     con.execute(
-        "UPDATE usuarios SET senha_hash=? WHERE id=?",
+        "UPDATE usuarios SET senha_hash=?, sessao_versao=sessao_versao+1 WHERE id=?",
         (generate_password_hash(senha), uid),
     )
     con.commit()

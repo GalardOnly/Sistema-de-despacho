@@ -25,6 +25,7 @@ def main():
         "migration inicial": ROOT / "database" / "migrations" / "versions" / "001_initial.py",
         "migration urgência mista": ROOT / "database" / "migrations" / "versions" / "002_urgencia_mista.py",
         "migration despacho atômico": ROOT / "database" / "migrations" / "versions" / "003_despacho_atomico.py",
+        "migration revogação de sessão": ROOT / "database" / "migrations" / "versions" / "004_revogacao_sessao.py",
         "inicializador SQLite": ROOT / "scripts" / "init_sqlite.py",
         "inicializador Supabase": ROOT / "scripts" / "init_supabase.py",
     }

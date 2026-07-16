@@ -101,6 +101,7 @@ class MigrationTests(unittest.TestCase):
                 "tipo_veiculo",
                 "indisponibilidade_justificativa",
                 "indisponibilidade_tipo",
+                "sessao_versao",
             }.issubset(user_columns)
         )
         self.assertTrue(
@@ -274,6 +275,11 @@ class DispatchApiTests(unittest.TestCase):
             ),
         }
         uid, unidade_id, nome = data[papel]
+        con = sqlite3.connect(self.db_path)
+        sessao_versao = con.execute(
+            "SELECT sessao_versao FROM usuarios WHERE id=?", (uid,)
+        ).fetchone()[0]
+        con.close()
         with self.client.session_transaction() as sess:
             sess.clear()
             sess["desp_uid"] = uid
@@ -282,6 +288,7 @@ class DispatchApiTests(unittest.TestCase):
                 "solicitante" if "solicitante" in papel else papel
             )
             sess["desp_unidade_id"] = unidade_id
+            sess["desp_sessao_versao"] = sessao_versao
             sess["desp_csrf_token"] = "csrf-test-token"
 
     def create_order(
@@ -315,11 +322,17 @@ class DispatchApiTests(unittest.TestCase):
 
     def concurrent_admin_client(self):
         client = self.app.test_client()
+        con = sqlite3.connect(self.db_path)
+        sessao_versao = con.execute(
+            "SELECT sessao_versao FROM usuarios WHERE id=?", (self.admin_id,)
+        ).fetchone()[0]
+        con.close()
         with client.session_transaction() as sess:
             sess["desp_uid"] = self.admin_id
             sess["desp_nome"] = "Administrador"
             sess["desp_papel"] = "admin"
             sess["desp_unidade_id"] = None
+            sess["desp_sessao_versao"] = sessao_versao
             sess["desp_csrf_token"] = "csrf-test-token"
         return client
 
@@ -1099,6 +1112,39 @@ class DispatchApiTests(unittest.TestCase):
             json={"senha": "adminnova"},
         )
         self.assertEqual(200, changed_admin.status_code, changed_admin.get_json())
+
+    def test_password_reset_revokes_existing_user_session(self):
+        user_client = self.app.test_client()
+        self.login("solicitante")
+        with self.client.session_transaction() as source:
+            with user_client.session_transaction() as target:
+                target.update(dict(source))
+
+        self.login("admin")
+        changed = self.client.post(
+            f"/despacho/api/usuarios/{self.solicitante_id}/senha",
+            json={"senha": "nova1234"},
+        )
+        self.assertEqual(200, changed.status_code, changed.get_json())
+
+        revoked = user_client.get("/despacho/api/unidades")
+        self.assertEqual(401, revoked.status_code, revoked.get_json())
+        with user_client.session_transaction() as sess:
+            self.assertNotIn("desp_uid", sess)
+
+    def test_deleted_driver_session_is_revoked(self):
+        driver_client = self.app.test_client()
+        self.login("entregador")
+        with self.client.session_transaction() as source:
+            with driver_client.session_transaction() as target:
+                target.update(dict(source))
+
+        self.login("admin")
+        removed = self.client.delete(f"/despacho/api/usuarios/{self.entregador_id}")
+        self.assertEqual(200, removed.status_code, removed.get_json())
+
+        revoked = driver_client.get("/despacho/api/disponibilidade")
+        self.assertEqual(401, revoked.status_code, revoked.get_json())
 
     def test_admin_updates_and_removes_driver(self):
         self.login("admin")
