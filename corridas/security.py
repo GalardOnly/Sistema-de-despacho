@@ -1,5 +1,6 @@
 """Controles de segurança e observabilidade compartilhados pela aplicação."""
 
+import hashlib
 import json
 import logging
 import os
@@ -15,6 +16,9 @@ from functools import wraps
 from flask import abort, g, jsonify, make_response, render_template, request, session
 from flask.logging import default_handler
 from werkzeug.exceptions import HTTPException
+
+import redis
+from redis.exceptions import RedisError
 
 
 def _env_bool(nome, padrao=True):
@@ -33,7 +37,31 @@ def _env_int(nome, padrao, minimo=1, maximo=86400):
 
 
 class LoginRateLimiter:
-    """Limita falhas de login no processo atual sem dependência externa."""
+    """Limita falhas de login em memória ou em um Redis compartilhado."""
+
+    _RESERVAR_REDIS = """
+    local agora = tonumber(ARGV[1])
+    local token = ARGV[2]
+    local janela_usuario = tonumber(ARGV[3])
+    local janela_ip = tonumber(ARGV[4])
+    local max_usuario = tonumber(ARGV[5])
+    local max_ip = tonumber(ARGV[6])
+
+    redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', agora - janela_usuario)
+    redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', agora - janela_ip)
+    if redis.call('ZCARD', KEYS[1]) >= max_usuario then
+        return 0
+    end
+    if redis.call('ZCARD', KEYS[2]) >= max_ip then
+        return 0
+    end
+
+    redis.call('ZADD', KEYS[1], agora, token)
+    redis.call('ZADD', KEYS[2], agora, token)
+    redis.call('PEXPIRE', KEYS[1], janela_usuario)
+    redis.call('PEXPIRE', KEYS[2], janela_ip)
+    return 1
+    """
 
     def __init__(self):
         self.max_usuario = _env_int("DESPACHO_LOGIN_MAX_USUARIO", 5, maximo=100)
@@ -46,6 +74,59 @@ class LoginRateLimiter:
         self._por_ip = defaultdict(deque)
         self._lock = threading.Lock()
         self._ultima_limpeza = 0.0
+        self._redis = None
+        self._redis_script = None
+        self._redis_obrigatorio = False
+
+    def configurar(self, ambiente):
+        url = (os.environ.get("REDIS_URL") or "").strip()
+        self._redis_obrigatorio = ambiente == "production"
+        if self._redis_obrigatorio and not url:
+            raise RuntimeError("Produção exige REDIS_URL para o rate limit compartilhado.")
+        if not url:
+            self._redis = None
+            self._redis_script = None
+            return
+        if not url.startswith(("redis://", "rediss://")):
+            raise RuntimeError("REDIS_URL precisa usar redis:// ou rediss://.")
+        self._redis = redis.Redis.from_url(
+            url,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            health_check_interval=30,
+        )
+        self._redis_script = self._redis.register_script(self._RESERVAR_REDIS)
+
+    @staticmethod
+    def _hash_chave(valor):
+        return hashlib.sha256(valor.encode("utf-8")).hexdigest()
+
+    def _chaves_redis(self, ip, usuario):
+        ip_hash = self._hash_chave(ip)
+        usuario_hash = self._hash_chave(f"{ip}:{usuario}")
+        return (
+            f"despacho:login:usuario:{usuario_hash}",
+            f"despacho:login:ip:{ip_hash}",
+        )
+
+    def _iniciar_redis(self, ip, usuario):
+        token = secrets.token_hex(16)
+        chaves = self._chaves_redis(ip, usuario)
+        try:
+            permitido = self._redis_script(
+                keys=chaves,
+                args=(
+                    int(time.time() * 1000),
+                    token,
+                    self.janela_usuario * 1000,
+                    self.janela_ip * 1000,
+                    self.max_usuario,
+                    self.max_ip,
+                ),
+            )
+        except RedisError as exc:
+            raise RuntimeError("rate limit compartilhado indisponível") from exc
+        return token if permitido == 1 else None
 
     @staticmethod
     def _podar(fila, limite):
@@ -66,6 +147,8 @@ class LoginRateLimiter:
         self._ultima_limpeza = agora
 
     def iniciar(self, ip, usuario):
+        if self._redis is not None:
+            return self._iniciar_redis(ip, usuario)
         agora = time.monotonic()
         chave_usuario = (ip, usuario)
         with self._lock:
@@ -91,6 +174,21 @@ class LoginRateLimiter:
         return deque(item for item in fila if item[0] != token)
 
     def concluir(self, ip, usuario, token, falhou, autenticado=False):
+        if self._redis is not None:
+            if falhou:
+                return
+            chave_usuario, chave_ip = self._chaves_redis(ip, usuario)
+            try:
+                pipeline = self._redis.pipeline(transaction=True)
+                if autenticado:
+                    pipeline.delete(chave_usuario)
+                else:
+                    pipeline.zrem(chave_usuario, token)
+                pipeline.zrem(chave_ip, token)
+                pipeline.execute()
+            except RedisError as exc:
+                raise RuntimeError("rate limit compartilhado indisponível") from exc
+            return
         if falhou:
             return
         chave_usuario = (ip, usuario)
@@ -127,17 +225,33 @@ def limitar_falhas_login(funcao):
             return funcao(*args, **kwargs)
         ip = request.remote_addr or "ip-desconhecido"
         usuario = (request.form.get("username") or "").strip().casefold() or "sem-usuario"
-        token = login_limiter.iniciar(ip, usuario)
+        try:
+            token = login_limiter.iniciar(ip, usuario)
+        except RuntimeError:
+            return render_template(
+                "despacho/login.html",
+                erro="Autenticação temporariamente indisponível. Tente novamente em instantes.",
+            ), 503
         if token is None:
             abort(429)
         try:
             response = make_response(funcao(*args, **kwargs))
         except Exception:
-            login_limiter.concluir(ip, usuario, token, falhou=False)
+            try:
+                login_limiter.concluir(ip, usuario, token, falhou=False)
+            except RuntimeError:
+                pass
             raise
         falhou = response.status_code == 401
         autenticado = 300 <= response.status_code < 400
-        login_limiter.concluir(ip, usuario, token, falhou, autenticado)
+        try:
+            login_limiter.concluir(ip, usuario, token, falhou, autenticado)
+        except RuntimeError:
+            session.clear()
+            return render_template(
+                "despacho/login.html",
+                erro="Autenticação temporariamente indisponível. Tente novamente em instantes.",
+            ), 503
         return response
 
     return wrapper
@@ -232,6 +346,7 @@ def configurar_seguranca(app):
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=_env_bool("DESPACHO_COOKIE_SECURE", True),
     )
+    login_limiter.configurar(app.config.get("APP_ENV", "development"))
     _configurar_logging(app)
 
     @app.before_request

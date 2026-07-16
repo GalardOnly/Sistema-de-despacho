@@ -42,6 +42,7 @@ def main():
         exigir("psycopg" in requirements.casefold(), "Driver PostgreSQL ausente", erros)
         exigir("sqlalchemy" in requirements.casefold(), "Camada de banco PostgreSQL ausente", erros)
         exigir("alembic" in requirements.casefold(), "Alembic ausente", erros)
+        exigir("redis" in requirements.casefold(), "Cliente Redis ausente", erros)
         exigir("gunicorn" in requirements.casefold(), "Gunicorn não está nas dependências", erros)
         exigir("USER app" in dockerfile, "Contêiner deve executar sem usuário root", erros)
         exigir(
