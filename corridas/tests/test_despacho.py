@@ -825,6 +825,16 @@ class DispatchApiTests(unittest.TestCase):
         ).get_json()
         self.assertEqual([-22.20, -22.21], [point["latitude"] for point in route])
 
+        route_recent = self.client.get(
+            f"/despacho/api/pedidos/{pedido['id']}/localizacoes?limit=1"
+        ).get_json()
+        self.assertEqual([-22.21], [point["latitude"] for point in route_recent])
+        route_previous = self.client.get(
+            f"/despacho/api/pedidos/{pedido['id']}/localizacoes"
+            f"?limit=1&antes_id={route_recent[0]['id']}"
+        ).get_json()
+        self.assertEqual([-22.20], [point["latitude"] for point in route_previous])
+
         self.login("admin")
         self.assertEqual(
             200, self.client.get(f"/despacho/api/pedidos/{pedido['id']}/localizacoes").status_code
@@ -916,6 +926,18 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual(1, resumo["total"])
         self.assertEqual(1, resumo["em_andamento"])
         self.assertEqual(0, resumo["fora_sla"])
+
+    def test_order_list_is_bounded_and_supports_cursor(self):
+        pedidos = [self.create_order(operador_nome=f"Operador {i}") for i in range(3)]
+
+        self.login("admin")
+        recentes = self.client.get("/despacho/api/pedidos?limit=2").get_json()
+        self.assertEqual([pedidos[2]["id"], pedidos[1]["id"]], [p["id"] for p in recentes])
+
+        anteriores = self.client.get(
+            f"/despacho/api/pedidos?limit=2&antes_id={pedidos[1]['id']}"
+        ).get_json()
+        self.assertEqual([pedidos[0]["id"]], [p["id"] for p in anteriores])
 
     def test_notifications_follow_dispatch_flow_by_role(self):
         pedido = self.create_order()
@@ -1032,6 +1054,22 @@ class DispatchApiTests(unittest.TestCase):
         self.login("outro_solicitante")
         other_unit_thread = self.client.get("/despacho/api/chat").get_json()
         self.assertEqual([], other_unit_thread)
+
+    def test_chat_is_bounded_and_supports_cursor(self):
+        self.login("solicitante")
+        mensagens = []
+        for texto in ("Mensagem 1", "Mensagem 2", "Mensagem 3"):
+            response = self.client.post("/despacho/api/chat", json={"texto": texto})
+            self.assertEqual(200, response.status_code, response.get_json())
+            mensagens.append(response.get_json())
+
+        recentes = self.client.get("/despacho/api/chat?limit=2").get_json()
+        self.assertEqual(["Mensagem 2", "Mensagem 3"], [m["texto"] for m in recentes])
+
+        anteriores = self.client.get(
+            f"/despacho/api/chat?limit=2&antes_id={mensagens[1]['id']}"
+        ).get_json()
+        self.assertEqual(["Mensagem 1"], [m["texto"] for m in anteriores])
 
     def test_admin_chat_summary_groups_received_messages_by_unit(self):
         self.login("solicitante")

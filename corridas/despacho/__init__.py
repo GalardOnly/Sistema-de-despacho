@@ -86,6 +86,9 @@ LIMITE_CODIGO_REFERENCIA = 64
 LIMITE_SENHA = 128
 LIMITE_TEXTO_CHAT = 2000
 LIMITE_JUSTIFICATIVA = 1000
+LIMITE_PEDIDOS_RETORNO = 500
+LIMITE_CHAT_RETORNO = 200
+LIMITE_LOCALIZACOES_RETORNO = 1000
 
 SENHAS_ADMIN_INSEGURAS = {
     "mudar123",
@@ -404,6 +407,22 @@ def _popular_dados_iniciais(con):
 
 def agora_ms():
     return int(time.time() * 1000)
+
+
+def _parametro_consulta_positivo(nome):
+    valor = request.args.get(nome)
+    if valor is None:
+        return None
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return None
+    return numero if numero > 0 else None
+
+
+def _limite_consulta(padrao, maximo):
+    solicitado = _parametro_consulta_positivo("limit")
+    return min(solicitado or padrao, maximo)
 
 
 def _protocolo(pid):
@@ -1421,19 +1440,27 @@ def api_pedidos():
         con.commit()
         return jsonify(linha_pedido(con, pedido))
 
-    if papel == "admin":
-        rows = con.execute("SELECT * FROM pedidos ORDER BY id DESC").fetchall()
-    elif papel == "solicitante":
-        uid = session["desp_unidade_id"]
-        rows = con.execute(
-            "SELECT * FROM pedidos WHERE origem_id=? ORDER BY id DESC", (uid,)
-        ).fetchall()
-    else:
+    limite = _limite_consulta(LIMITE_PEDIDOS_RETORNO, LIMITE_PEDIDOS_RETORNO)
+    antes_id = _parametro_consulta_positivo("antes_id")
+    filtros = []
+    params = []
+    if papel == "solicitante":
+        filtros.append("origem_id=?")
+        params.append(session["desp_unidade_id"])
+    elif papel == "entregador":
         placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
-        rows = con.execute(
-            f"SELECT * FROM pedidos WHERE entregador_id=? AND status IN ({placeholders}) ORDER BY id DESC",
-            (session["desp_uid"], *STATUS_ATIVOS_ENTREGADOR),
-        ).fetchall()
+        filtros.extend(
+            ["entregador_id=?", f"status IN ({placeholders})"]
+        )
+        params.extend((session["desp_uid"], *STATUS_ATIVOS_ENTREGADOR))
+    if antes_id:
+        filtros.append("id<?")
+        params.append(antes_id)
+    where_sql = "WHERE " + " AND ".join(filtros) if filtros else ""
+    rows = con.execute(
+        f"SELECT * FROM pedidos {where_sql} ORDER BY id DESC LIMIT ?",
+        (*params, limite),
+    ).fetchall()
     return jsonify([linha_pedido(con, r) for r in rows])
 
 
@@ -1614,11 +1641,18 @@ def api_localizacoes(pid):
         autorizado = unidade_id == r["origem_id"]
     if not autorizado:
         return jsonify(error="sem permissão para consultar esta rota"), 403
+    limite = _limite_consulta(
+        LIMITE_LOCALIZACOES_RETORNO, LIMITE_LOCALIZACOES_RETORNO
+    )
+    antes_id = _parametro_consulta_positivo("antes_id")
+    filtro_cursor = " AND id<?" if antes_id else ""
+    params = (pid, antes_id, limite) if antes_id else (pid, limite)
     rows = con.execute(
         "SELECT id,latitude,longitude,precisao,ts FROM localizacoes_pedido "
-        "WHERE pedido_id=? ORDER BY ts,id",
-        (pid,),
+        f"WHERE pedido_id=?{filtro_cursor} ORDER BY id DESC LIMIT ?",
+        params,
     ).fetchall()
+    rows = list(reversed(rows))
     return jsonify([dict(row) for row in rows])
 
 
@@ -1839,6 +1873,11 @@ def api_chat():
         if solicitante_ref:
             where.append("c.unidade_id=?")
             params.append(solicitante_ref["unidade_id"])
+    antes_id = _parametro_consulta_positivo("antes_id")
+    if antes_id:
+        where.append("c.id<?")
+        params.append(antes_id)
+    limite = _limite_consulta(LIMITE_CHAT_RETORNO, LIMITE_CHAT_RETORNO)
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     rows = con.execute(
         f"""
@@ -1847,8 +1886,10 @@ def api_chat():
         JOIN usuarios u ON u.id = c.remetente_id
         LEFT JOIN unidades un ON un.id = c.unidade_id
         {where_sql}
-        ORDER BY c.ts, c.id
+        ORDER BY c.id DESC
+        LIMIT ?
         """,
-        params,
+        (*params, limite),
     ).fetchall()
+    rows = list(reversed(rows))
     return jsonify([_chat_linha(row) for row in rows])
