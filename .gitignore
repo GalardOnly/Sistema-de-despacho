@@ -46,6 +46,12 @@ htmlcov/
 
 # Documentação interna de trabalho
 docs/superpowers/
+*.docx
+~$*.docx
+docs/*.md
+docs/*.html
+corridas/despacho/DEPLOY.md
+database/migrations/README.md
 
 # Arquivos compactados/exports locais
 *.zip
