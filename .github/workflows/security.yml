@@ -2,7 +2,7 @@ name: Qualidade e segurança
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: [main]
   pull_request:
 
 permissions:
