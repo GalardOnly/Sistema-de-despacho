@@ -80,6 +80,12 @@ CSRF_SESSION_KEY = "desp_csrf_token"
 CSRF_HEADER = "X-CSRF-Token"
 SESSION_VERSION_KEY = "desp_sessao_versao"
 METODOS_COM_MUTACAO = {"POST", "PUT", "PATCH", "DELETE"}
+LIMITE_NOME = 120
+LIMITE_USERNAME = 64
+LIMITE_CODIGO_REFERENCIA = 64
+LIMITE_SENHA = 128
+LIMITE_TEXTO_CHAT = 2000
+LIMITE_JUSTIFICATIVA = 1000
 
 SENHAS_ADMIN_INSEGURAS = {
     "mudar123",
@@ -474,7 +480,7 @@ def _buscar_tipo_custom(con, unidade_id, nome):
 def _salvar_tipo_custom(con, unidade_id, nome):
     nome_limpo = " ".join((nome or "").strip().split())
     normalizado = _normalizar_tipo_coleta(nome_limpo)
-    if len(nome_limpo) < 2 or normalizado == "outro":
+    if len(nome_limpo) < 2 or len(nome_limpo) > LIMITE_NOME or normalizado == "outro":
         return None
 
     tipos_base = {_normalizar_tipo_coleta(tipo): tipo for tipo in _tipos_base_sem_outro()}
@@ -525,7 +531,7 @@ def _normalizar_nome_operador(nome):
 
 def _buscar_ou_criar_operador(con, unidade_id, nome):
     nome_limpo = " ".join((nome or "").strip().split())
-    if len(nome_limpo) < 2:
+    if len(nome_limpo) < 2 or len(nome_limpo) > LIMITE_NOME:
         return None
 
     nome_normalizado = _normalizar_nome_operador(nome_limpo)
@@ -985,7 +991,11 @@ def desp_login():
         username = (request.form.get("username") or "").strip()
         senha = request.form.get("senha") or ""
         con = get_db_desp()
-        u = con.execute("SELECT * FROM usuarios WHERE username=? AND ativo=1", (username,)).fetchone()
+        u = None
+        if len(username) <= LIMITE_USERNAME and len(senha) <= LIMITE_SENHA:
+            u = con.execute(
+                "SELECT * FROM usuarios WHERE username=? AND ativo=1", (username,)
+            ).fetchone()
         if not u or not check_password_hash(u["senha_hash"], senha):
             erro = "Usuário ou senha incorretos."
         else:
@@ -1052,6 +1062,8 @@ def api_unidades():
         nome = (request.get_json(force=True).get("nome") or "").strip()
         if not nome:
             return jsonify(error="nome obrigatório"), 400
+        if len(nome) > LIMITE_NOME:
+            return jsonify(error=f"nome deve ter no máximo {LIMITE_NOME} caracteres"), 400
         try:
             con.execute("INSERT INTO unidades(nome) VALUES(?)", (nome,))
             con.commit()
@@ -1077,8 +1089,12 @@ def api_usuarios():
 
         if not (nome and username and senha and papel in PAPEIS):
             return jsonify(error="dados incompletos"), 400
-        if len(senha) < 8:
-            return jsonify(error="senha deve ter pelo menos 8 caracteres"), 400
+        if len(nome) > LIMITE_NOME or len(username) > LIMITE_USERNAME:
+            return jsonify(error="nome ou login excede o limite permitido"), 400
+        if not 8 <= len(senha) <= LIMITE_SENHA:
+            return jsonify(error=f"senha deve ter entre 8 e {LIMITE_SENHA} caracteres"), 400
+        if len(codigo_ref) > LIMITE_CODIGO_REFERENCIA:
+            return jsonify(error="código de referência excede o limite permitido"), 400
         if papel != "admin" and not codigo_ref:
             return jsonify(error="código de referência obrigatório"), 400
         if codigo_ref:
@@ -1209,8 +1225,8 @@ def api_alterar_senha_usuario(uid):
     con = get_db_desp()
     d = request.get_json(silent=True) or {}
     senha = (d.get("senha") or d.get("nova_senha") or "").strip()
-    if len(senha) < 8:
-        return jsonify(error="senha deve ter pelo menos 8 caracteres"), 400
+    if not 8 <= len(senha) <= LIMITE_SENHA:
+        return jsonify(error=f"senha deve ter entre 8 e {LIMITE_SENHA} caracteres"), 400
 
     usuario = con.execute(
         "SELECT id, username FROM usuarios WHERE id=? AND ativo=1", (uid,)
@@ -1244,6 +1260,8 @@ def api_disponibilidade():
             tipo = (d.get("tipo") or "").strip()
             if not justificativa or tipo not in TIPOS_INDISPONIBILIDADE:
                 return jsonify(error="justificativa e tipo de indisponibilidade são obrigatórios"), 400
+            if len(justificativa) > LIMITE_JUSTIFICATIVA:
+                return jsonify(error="justificativa excede o limite permitido"), 400
             ts = agora_ms()
             con.execute(
                 "INSERT INTO indisponibilidades_entregador(entregador_id,tipo,justificativa,ts) "
@@ -1527,6 +1545,8 @@ def api_entrega(pid):
     d = request.get_json(silent=True) or {}
     sla = _sla_do_pedido(r)
     justificativa = (d.get("justificativa_atraso") or "").strip()
+    if len(justificativa) > LIMITE_JUSTIFICATIVA:
+        return jsonify(error="justificativa excede o limite permitido"), 400
     if sla["atrasado"] and not (justificativa or r["justificativa_atraso"]):
         return jsonify(error="justificativa de atraso obrigatória"), 400
     agora = agora_ms()
@@ -1612,7 +1632,9 @@ def api_cancelar(pid):
     if session["desp_papel"] == "solicitante":
         if r["origem_id"] != session["desp_unidade_id"] or r["status"] != "solicitado":
             return jsonify(error="não é possível cancelar este pedido"), 403
-    motivo = (request.get_json(silent=True) or {}).get("motivo")
+    motivo = ((request.get_json(silent=True) or {}).get("motivo") or "").strip()
+    if len(motivo) > LIMITE_JUSTIFICATIVA:
+        return jsonify(error="motivo excede o limite permitido"), 400
     if r["status"] in ("entregue", "cancelado"):
         return jsonify(error="pedido já foi finalizado"), 400
     if session["desp_papel"] == "solicitante":
@@ -1741,6 +1763,8 @@ def api_chat():
         texto = (d.get("texto") or "").strip()
         if not texto:
             return jsonify(error="mensagem vazia"), 400
+        if len(texto) > LIMITE_TEXTO_CHAT:
+            return jsonify(error="mensagem excede o limite permitido"), 400
         if papel == "solicitante":
             solicitante_id = session["desp_uid"]
             unidade_id = session["desp_unidade_id"]

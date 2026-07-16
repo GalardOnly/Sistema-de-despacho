@@ -382,6 +382,13 @@ def configurar_seguranca(app):
             return render_template("despacho/login.html", erro=mensagem), 429
         return jsonify(error=mensagem, request_id=g.request_id), 429
 
+    @app.errorhandler(413)
+    def corpo_muito_grande(_erro):
+        mensagem = "Conteúdo enviado excede o limite permitido."
+        if request.path.startswith("/despacho/api/"):
+            return jsonify(error=mensagem, request_id=g.request_id), 413
+        return render_template("despacho/erro.html", request_id=g.request_id), 413
+
     @app.errorhandler(Exception)
     def erro_nao_tratado(erro):
         if isinstance(erro, HTTPException):

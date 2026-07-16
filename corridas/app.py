@@ -46,6 +46,16 @@ def _env_bool(nome, padrao=False):
     return valor.strip().casefold() not in {"0", "false", "nao", "não", "off"}
 
 
+def _env_int(nome, padrao, minimo, maximo):
+    try:
+        valor = int(os.environ.get(nome, padrao))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{nome} precisa ser um número inteiro.") from exc
+    if not minimo <= valor <= maximo:
+        raise RuntimeError(f"{nome} precisa estar entre {minimo} e {maximo}.")
+    return valor
+
+
 def _ambiente():
     return (os.environ.get("APP_ENV") or "development").strip().casefold()
 
@@ -74,6 +84,9 @@ def criar_app():
     flask_app = Flask(__name__)
     flask_app.secret_key = carregar_app_secret()
     flask_app.config["APP_ENV"] = _ambiente()
+    flask_app.config["MAX_CONTENT_LENGTH"] = _env_int(
+        "MAX_CONTENT_LENGTH_BYTES", 65536, 4096, 1048576
+    )
     if _env_bool("TRUST_PROXY_HEADERS", flask_app.config["APP_ENV"] != "development"):
         flask_app.wsgi_app = ProxyFix(
             flask_app.wsgi_app,

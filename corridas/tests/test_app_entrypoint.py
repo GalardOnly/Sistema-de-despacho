@@ -78,6 +78,24 @@ class AppEntrypointTests(unittest.TestCase):
         self.assertEqual(200, ready.status_code)
         self.assertEqual("pronto", ready.get_json()["status"])
 
+    def test_request_body_limit_is_enabled(self):
+        self.assertEqual(65536, self.app_module.app.config["MAX_CONTENT_LENGTH"])
+        logged = self.client.post(
+            "/despacho/login",
+            data={"username": "admin", "senha": "senha-admin-testes"},
+        )
+        self.assertEqual(302, logged.status_code)
+        with self.client.session_transaction() as sess:
+            csrf = sess["desp_csrf_token"]
+        response = self.client.post(
+            "/despacho/api/chat",
+            data="x" * 70000,
+            content_type="application/json",
+            headers={"X-CSRF-Token": csrf},
+        )
+        self.assertEqual(413, response.status_code, response.get_json())
+        self.assertIn("limite", response.get_json()["error"])
+
     def test_legacy_login_code_no_longer_unlocks_old_api(self):
         response = self.client.post("/login", data={"nome": "Teste", "codigo": "1234"})
         self.assertEqual(302, response.status_code)

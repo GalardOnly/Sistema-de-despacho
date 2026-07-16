@@ -967,6 +967,15 @@ class DispatchApiTests(unittest.TestCase):
         requester_titles = [n["titulo"] for n in self.client.get("/despacho/api/notificacoes").get_json()["notificacoes"]]
         self.assertIn("Exame retirado", requester_titles)
 
+    def test_rejects_oversized_chat_and_request_body(self):
+        self.login("solicitante")
+        oversized_text = self.client.post(
+            "/despacho/api/chat",
+            json={"texto": "x" * (despacho.LIMITE_TEXTO_CHAT + 1)},
+        )
+        self.assertEqual(400, oversized_text.status_code, oversized_text.get_json())
+        self.assertIn("limite", oversized_text.get_json()["error"])
+
     def test_read_notifications_are_removed_from_feed(self):
         self.create_order()
 
