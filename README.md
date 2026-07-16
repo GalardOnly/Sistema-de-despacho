@@ -26,26 +26,32 @@ MVP em Flask + SQLite para despacho de coletas de exames, com perfis de administ
 
 ```text
 corridas/
+  __init__.py
   app.py
+  config.py
+  extensions.py
   security.py
+  auth/
+  admin/
+  pedidos/
+  entregadores/
+  chat/
+  notificacoes/
+  relatorios/
+  database/
   despacho/
     __init__.py
-    DEPLOY.md
-    templates/despacho/
-database/
-  backups/
-  migrations/
-docs/
-instance/
-logs/
+  templates/despacho/
+  static/
+migrations/
 scripts/
-static/
+tests/
 Dockerfile
 gunicorn.conf.py
 cloudbuild.yaml
 ```
 
-As pastas `database`, `instance`, `logs`, `scripts` e `static` ficam preparadas para próximas fases. Arquivos locais de banco, logs, ZIPs e segredos ficam fora do Git pelo `.gitignore`.
+As rotas são separadas por domínio e compartilham o Blueprint `despacho`, preservando as URLs existentes. Arquivos locais de banco, logs, ZIPs e segredos ficam fora do Git pelo `.gitignore`.
 
 ## Rodando localmente
 
@@ -119,5 +125,5 @@ Depois acesse `http://localhost:8080/healthz` e `http://localhost:8080/despacho/
 ## Testes
 
 ```bash
-python -m unittest discover -s corridas/tests -v
+python -m unittest discover -s tests -v
 ```

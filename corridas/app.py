@@ -1,77 +1,32 @@
+"""Fábrica e ponto de entrada da aplicação Flask."""
+
 import os
+import sys
+from pathlib import Path
 
 from flask import Flask, jsonify, redirect, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-if __package__:
-    from .database import banco_postgres_configurado, usuario_postgres_runtime
-    from .despacho import despacho_bp, verificar_db_desp
-    from .security import configurar_seguranca
-else:
-    from database import banco_postgres_configurado, usuario_postgres_runtime
-    from despacho import despacho_bp, verificar_db_desp
-    from security import configurar_seguranca
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-SEGREDOS_INSEGUROS = {
-    "troque-este-segredo-em-producao",
-    "change-me",
-    "changeme",
-    "secret",
-    "dev",
-    "1234",
-}
-
-
-def parece_placeholder(valor):
-    texto = valor.casefold()
-    return texto in SEGREDOS_INSEGUROS or any(
-        termo in texto for termo in ("troque", "change", "cole_aqui", "placeholder")
-    )
-
-
-def carregar_app_secret():
-    secret = (os.environ.get("APP_SECRET") or "").strip()
-    if not secret:
-        raise RuntimeError("Defina APP_SECRET com uma chave segura antes de iniciar a aplicação.")
-    if len(secret) < 32 or parece_placeholder(secret):
-        raise RuntimeError("APP_SECRET precisa ter pelo menos 32 caracteres e não pode ser um valor padrão.")
-    return secret
-
-
-def _env_bool(nome, padrao=False):
-    valor = os.environ.get(nome)
-    if valor is None:
-        return padrao
-    return valor.strip().casefold() not in {"0", "false", "nao", "não", "off"}
-
-
-def _env_int(nome, padrao, minimo, maximo):
-    try:
-        valor = int(os.environ.get(nome, padrao))
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"{nome} precisa ser um número inteiro.") from exc
-    if not minimo <= valor <= maximo:
-        raise RuntimeError(f"{nome} precisa estar entre {minimo} e {maximo}.")
-    return valor
-
-
-def _ambiente():
-    return (os.environ.get("APP_ENV") or "development").strip().casefold()
+from corridas.config import ambiente as _ambiente
+from corridas.config import carregar_app_secret, env_bool as _env_bool, env_int as _env_int
+from corridas.config import parece_placeholder
+from corridas.database import banco_postgres_configurado, usuario_postgres_runtime
+from corridas.despacho import despacho_bp, verificar_db_desp
+from corridas.security import configurar_seguranca
 
 
 def validar_persistencia_cloud_run():
-    ambiente = _ambiente()
+    ambiente_atual = _ambiente()
     em_cloud_run = bool(os.environ.get("K_SERVICE"))
     postgres = banco_postgres_configurado()
-    if ambiente == "production" and not postgres:
-        raise RuntimeError(
-            "Produção exige DATABASE_URL apontando para PostgreSQL."
-        )
-    if ambiente == "production" and usuario_postgres_runtime() != "despacho_app":
-        raise RuntimeError(
-            "Produção exige a role limitada despacho_app na DATABASE_URL."
-        )
+    if ambiente_atual == "production" and not postgres:
+        raise RuntimeError("Produção exige DATABASE_URL apontando para PostgreSQL.")
+    if ambiente_atual == "production" and usuario_postgres_runtime() != "despacho_app":
+        raise RuntimeError("Produção exige a role limitada despacho_app na DATABASE_URL.")
     if em_cloud_run and not postgres and not _env_bool("ALLOW_EPHEMERAL_SQLITE"):
         raise RuntimeError(
             "Cloud Run com SQLite exige ALLOW_EPHEMERAL_SQLITE=1 e deve ser usado "

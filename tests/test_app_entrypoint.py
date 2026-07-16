@@ -10,13 +10,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-CORRIDAS_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = CORRIDAS_DIR.parent
-if str(CORRIDAS_DIR) not in sys.path:
-    sys.path.insert(0, str(CORRIDAS_DIR))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CORRIDAS_DIR = PROJECT_ROOT / "corridas"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-import despacho
-import security
+from corridas import despacho, security
 
 
 class AppEntrypointTests(unittest.TestCase):
@@ -26,7 +25,7 @@ class AppEntrypointTests(unittest.TestCase):
         self.original_env_db_path = os.environ.get("DB_PATH")
         self.original_app_secret = os.environ.get("APP_SECRET")
         self.original_admin_password = os.environ.get("DESPACHO_ADMIN_SENHA_INICIAL")
-        self.original_app_module = sys.modules.pop("app", None)
+        self.original_app_module = sys.modules.pop("corridas.app", None)
 
         despacho.DESP_DB_PATH = str(Path(self.tempdir.name) / "despacho.db")
         os.environ["DB_PATH"] = str(Path(self.tempdir.name) / "corridas.db")
@@ -34,14 +33,14 @@ class AppEntrypointTests(unittest.TestCase):
         os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = "senha-admin-testes"
 
         despacho.init_db_desp()
-        self.app_module = importlib.import_module("app")
+        self.app_module = importlib.import_module("corridas.app")
         security.login_limiter.reset()
         self.client = self.app_module.app.test_client()
 
     def tearDown(self):
-        sys.modules.pop("app", None)
+        sys.modules.pop("corridas.app", None)
         if self.original_app_module is not None:
-            sys.modules["app"] = self.original_app_module
+            sys.modules["corridas.app"] = self.original_app_module
         despacho.DESP_DB_PATH = self.original_db_path
         if self.original_env_db_path is None:
             os.environ.pop("DB_PATH", None)
@@ -106,24 +105,24 @@ class AppEntrypointTests(unittest.TestCase):
             self.assertNotIn("nome", sess)
 
     def test_app_secret_must_be_configured(self):
-        sys.modules.pop("app", None)
+        sys.modules.pop("corridas.app", None)
         os.environ.pop("APP_SECRET", None)
 
         with self.assertRaisesRegex(RuntimeError, "APP_SECRET"):
-            importlib.import_module("app")
+            importlib.import_module("corridas.app")
 
     def test_app_secret_rejects_placeholder_value(self):
-        sys.modules.pop("app", None)
+        sys.modules.pop("corridas.app", None)
         for value in (
             "troque-este-segredo-em-producao",
             "cole_aqui_a_chave_gerada_com_secrets",
         ):
             with self.subTest(value=value):
-                sys.modules.pop("app", None)
+                sys.modules.pop("corridas.app", None)
                 os.environ["APP_SECRET"] = value
 
                 with self.assertRaisesRegex(RuntimeError, "APP_SECRET"):
-                    importlib.import_module("app")
+                    importlib.import_module("corridas.app")
 
     def test_wsgi_import_works_from_project_root(self):
         env = os.environ.copy()
@@ -313,7 +312,7 @@ class AppEntrypointTests(unittest.TestCase):
         self.assertIn("corridas.app:app", dockerfile)
         self.assertIn("gunicorn", requirements)
         self.assertIn("Alembic", requirements)
-        self.assertIn("COPY database/migrations ./database/migrations", dockerfile)
+        self.assertIn("COPY migrations ./migrations", dockerfile)
         self.assertIn("APP_ENV=homologation", cloudbuild)
         self.assertIn("DATABASE_URL=despacho-database-url:latest", cloudbuild)
         self.assertNotIn("ALLOW_EPHEMERAL_SQLITE=1", cloudbuild)
@@ -365,7 +364,7 @@ class AppEntrypointTests(unittest.TestCase):
         )
 
     def test_all_inline_script_and_style_blocks_have_nonce(self):
-        templates = CORRIDAS_DIR / "despacho" / "templates" / "despacho"
+        templates = CORRIDAS_DIR / "templates" / "despacho"
         for path in templates.glob("*.html"):
             source = path.read_text(encoding="utf-8")
             for tag in re.findall(r"<(?:script|style)\b[^>]*>", source):

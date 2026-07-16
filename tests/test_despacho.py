@@ -9,11 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-CORRIDAS_DIR = Path(__file__).resolve().parents[1]
-if str(CORRIDAS_DIR) not in sys.path:
-    sys.path.insert(0, str(CORRIDAS_DIR))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-import despacho
+from corridas import despacho
+from corridas.pedidos import routes as pedidos_routes
 from flask import Flask
 
 
@@ -363,7 +364,7 @@ class DispatchApiTests(unittest.TestCase):
                 with result_lock:
                     errors.append(exc)
 
-        with patch.object(despacho, "agora_ms", side_effect=synchronized_now):
+        with patch.object(pedidos_routes, "agora_ms", side_effect=synchronized_now):
             threads = [
                 threading.Thread(
                     target=dispatch,

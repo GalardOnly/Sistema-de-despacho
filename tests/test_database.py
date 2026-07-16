@@ -8,12 +8,11 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CORRIDAS_DIR = PROJECT_ROOT / "corridas"
-if str(CORRIDAS_DIR) not in sys.path:
-    sys.path.insert(0, str(CORRIDAS_DIR))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-import database
+from corridas import database
 
 
 class DatabaseCompatibilityTests(unittest.TestCase):
@@ -51,8 +50,9 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         self.assertFalse(retorna_id)
 
     def test_dispatch_queries_do_not_use_sqlite_only_nocase_collation(self):
-        despacho_source = (PROJECT_ROOT / "corridas" / "despacho" / "__init__.py").read_text(
-            encoding="utf-8"
+        despacho_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (PROJECT_ROOT / "corridas").rglob("*.py")
         )
 
         self.assertNotIn("COLLATE NOCASE", despacho_source.upper())
@@ -108,7 +108,7 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         )
 
         migration = (
-            PROJECT_ROOT / "database" / "migrations" / "versions" / "001_initial.py"
+            PROJECT_ROOT / "migrations" / "versions" / "001_initial.py"
         ).read_text(encoding="utf-8")
 
         for trecho in (
@@ -123,7 +123,6 @@ class DatabaseCompatibilityTests(unittest.TestCase):
 
         mixed_priority_migration = (
             PROJECT_ROOT
-            / "database"
             / "migrations"
             / "versions"
             / "002_urgencia_mista.py"
@@ -133,7 +132,6 @@ class DatabaseCompatibilityTests(unittest.TestCase):
 
         atomic_dispatch_migration = (
             PROJECT_ROOT
-            / "database"
             / "migrations"
             / "versions"
             / "003_despacho_atomico.py"
@@ -147,7 +145,6 @@ class DatabaseCompatibilityTests(unittest.TestCase):
 
         session_revocation_migration = (
             PROJECT_ROOT
-            / "database"
             / "migrations"
             / "versions"
             / "004_revogacao_sessao.py"

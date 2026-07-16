@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY corridas ./corridas
 COPY alembic.ini ./alembic.ini
-COPY database/migrations ./database/migrations
+COPY migrations ./migrations
 COPY scripts/init_supabase.py ./scripts/init_supabase.py
 COPY gunicorn.conf.py ./gunicorn.conf.py
 

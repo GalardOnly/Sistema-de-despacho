@@ -1,4 +1,4 @@
-"""Conexões de banco usadas pelo sistema de despacho."""
+"""Conexões SQLite e PostgreSQL usadas pelo sistema de despacho."""
 
 import os
 import re

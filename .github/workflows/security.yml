@@ -41,7 +41,7 @@ jobs:
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Executar testes
-        run: python -m unittest discover -s corridas/tests -p "test_*.py"
+        run: python -m unittest discover -s tests -p "test_*.py"
 
       - name: Validar configuração de nuvem
         run: python scripts/gcp_preflight.py
@@ -50,4 +50,4 @@ jobs:
         run: python -m pip_audit -r requirements.txt
 
       - name: Analisar segurança do código Python
-        run: python -m bandit -r corridas scripts -x corridas/tests -ll -ii
+        run: python -m bandit -r corridas scripts migrations -x tests -ll -ii

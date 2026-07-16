@@ -21,11 +21,11 @@ def main():
         ".dockerignore": ROOT / ".dockerignore",
         ".gcloudignore": ROOT / ".gcloudignore",
         "alembic.ini": ROOT / "alembic.ini",
-        "ambiente Alembic": ROOT / "database" / "migrations" / "env.py",
-        "migration inicial": ROOT / "database" / "migrations" / "versions" / "001_initial.py",
-        "migration urgência mista": ROOT / "database" / "migrations" / "versions" / "002_urgencia_mista.py",
-        "migration despacho atômico": ROOT / "database" / "migrations" / "versions" / "003_despacho_atomico.py",
-        "migration revogação de sessão": ROOT / "database" / "migrations" / "versions" / "004_revogacao_sessao.py",
+        "ambiente Alembic": ROOT / "migrations" / "env.py",
+        "migration inicial": ROOT / "migrations" / "versions" / "001_initial.py",
+        "migration urgência mista": ROOT / "migrations" / "versions" / "002_urgencia_mista.py",
+        "migration despacho atômico": ROOT / "migrations" / "versions" / "003_despacho_atomico.py",
+        "migration revogação de sessão": ROOT / "migrations" / "versions" / "004_revogacao_sessao.py",
         "inicializador SQLite": ROOT / "scripts" / "init_sqlite.py",
         "inicializador Supabase": ROOT / "scripts" / "init_supabase.py",
     }
@@ -46,7 +46,7 @@ def main():
         exigir("gunicorn" in requirements.casefold(), "Gunicorn não está nas dependências", erros)
         exigir("USER app" in dockerfile, "Contêiner deve executar sem usuário root", erros)
         exigir(
-            "COPY database/migrations ./database/migrations" in dockerfile,
+            "COPY migrations ./migrations" in dockerfile,
             "Migrations Alembic ausentes da imagem",
             erros,
         )
