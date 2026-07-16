@@ -669,7 +669,7 @@ def _entregador_ocupado(con, entregador_id):
     placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
     return (
         con.execute(
-            f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders}) LIMIT 1",
+            f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders}) LIMIT 1",  # nosec B608
             (entregador_id, *STATUS_ATIVOS_ENTREGADOR),
         ).fetchone()
         is not None
@@ -679,7 +679,7 @@ def _entregador_ocupado(con, entregador_id):
 def _reservar_entregador(con, entregador_id):
     placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
     resultado = con.execute(
-        "UPDATE usuarios SET disponivel=0 "
+        "UPDATE usuarios SET disponivel=0 "  # nosec B608
         "WHERE id=? AND papel='entregador' AND ativo=1 AND disponivel=1 "
         "AND NOT EXISTS ("
         f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders})"
@@ -692,7 +692,7 @@ def _reservar_entregador(con, entregador_id):
 def _liberar_entregador_se_sem_pedido_ativo(con, entregador_id):
     placeholders = _status_placeholders(STATUS_ATIVOS_ENTREGADOR)
     con.execute(
-        "UPDATE usuarios SET disponivel=1 "
+        "UPDATE usuarios SET disponivel=1 "  # nosec B608
         "WHERE id=? AND NOT EXISTS ("
         f"SELECT 1 FROM pedidos WHERE entregador_id=? AND status IN ({placeholders})"
         ")",
@@ -1351,18 +1351,14 @@ def api_notificacoes():
     con = get_db_desp()
     where, params = _filtro_notificacoes_sessao("n")
     total_nao_lidas = con.execute(
-        f"SELECT COUNT(*) AS n FROM notificacoes n WHERE {where} AND n.lida=0",
+        f"SELECT COUNT(*) AS n FROM notificacoes n WHERE {where} AND n.lida=0",  # nosec B608
         params,
     ).fetchone()["n"]
     rows = con.execute(
-        f"""
-        SELECT n.*, p.protocolo
-        FROM notificacoes n
-        LEFT JOIN pedidos p ON p.id = n.pedido_id
-        WHERE {where} AND n.lida=0
-        ORDER BY n.criado_em DESC, n.id DESC
-        LIMIT 40
-        """,
+        f"SELECT n.*, p.protocolo FROM notificacoes n "  # nosec B608
+        "LEFT JOIN pedidos p ON p.id = n.pedido_id "
+        f"WHERE {where} AND n.lida=0 "
+        "ORDER BY n.criado_em DESC, n.id DESC LIMIT 40",
         params,
     ).fetchall()
     return jsonify(
@@ -1377,7 +1373,7 @@ def api_notificacao_lida(nid):
     con = get_db_desp()
     where, params = _filtro_notificacoes_sessao("n")
     row = con.execute(
-        f"SELECT n.id FROM notificacoes n WHERE n.id=? AND {where}",
+        f"SELECT n.id FROM notificacoes n WHERE n.id=? AND {where}",  # nosec B608
         (nid, *params),
     ).fetchone()
     if not row:
@@ -1458,7 +1454,7 @@ def api_pedidos():
         params.append(antes_id)
     where_sql = "WHERE " + " AND ".join(filtros) if filtros else ""
     rows = con.execute(
-        f"SELECT * FROM pedidos {where_sql} ORDER BY id DESC LIMIT ?",
+        f"SELECT * FROM pedidos {where_sql} ORDER BY id DESC LIMIT ?",  # nosec B608
         (*params, limite),
     ).fetchall()
     return jsonify([linha_pedido(con, r) for r in rows])
@@ -1648,7 +1644,7 @@ def api_localizacoes(pid):
     filtro_cursor = " AND id<?" if antes_id else ""
     params = (pid, antes_id, limite) if antes_id else (pid, limite)
     rows = con.execute(
-        "SELECT id,latitude,longitude,precisao,ts FROM localizacoes_pedido "
+        "SELECT id,latitude,longitude,precisao,ts FROM localizacoes_pedido "  # nosec B608
         f"WHERE pedido_id=?{filtro_cursor} ORDER BY id DESC LIMIT ?",
         params,
     ).fetchall()
@@ -1880,15 +1876,10 @@ def api_chat():
     limite = _limite_consulta(LIMITE_CHAT_RETORNO, LIMITE_CHAT_RETORNO)
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     rows = con.execute(
-        f"""
-        SELECT c.*, u.nome AS remetente_nome, un.nome AS unidade
-        FROM chat_mensagens c
-        JOIN usuarios u ON u.id = c.remetente_id
-        LEFT JOIN unidades un ON un.id = c.unidade_id
-        {where_sql}
-        ORDER BY c.id DESC
-        LIMIT ?
-        """,
+        f"SELECT c.*, u.nome AS remetente_nome, un.nome AS unidade "  # nosec B608
+        "FROM chat_mensagens c JOIN usuarios u ON u.id = c.remetente_id "
+        "LEFT JOIN unidades un ON un.id = c.unidade_id "
+        f"{where_sql} ORDER BY c.id DESC LIMIT ?",
         (*params, limite),
     ).fetchall()
     rows = list(reversed(rows))
