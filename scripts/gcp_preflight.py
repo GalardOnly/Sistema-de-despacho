@@ -20,9 +20,12 @@ def main():
         "requirements.txt": ROOT / "requirements.txt",
         ".dockerignore": ROOT / ".dockerignore",
         ".gcloudignore": ROOT / ".gcloudignore",
-        "migration PostgreSQL": ROOT / "database" / "migrations" / "postgresql" / "001_initial.sql",
-        "migration urgência mista": ROOT / "database" / "migrations" / "postgresql" / "002_urgencia_mista.sql",
-        "migration despacho atômico": ROOT / "database" / "migrations" / "postgresql" / "003_despacho_atomico.sql",
+        "alembic.ini": ROOT / "alembic.ini",
+        "ambiente Alembic": ROOT / "database" / "migrations" / "env.py",
+        "migration inicial": ROOT / "database" / "migrations" / "versions" / "001_initial.py",
+        "migration urgência mista": ROOT / "database" / "migrations" / "versions" / "002_urgencia_mista.py",
+        "migration despacho atômico": ROOT / "database" / "migrations" / "versions" / "003_despacho_atomico.py",
+        "inicializador SQLite": ROOT / "scripts" / "init_sqlite.py",
         "inicializador Supabase": ROOT / "scripts" / "init_supabase.py",
     }
     for nome, caminho in arquivos.items():
@@ -37,8 +40,14 @@ def main():
         exigir("ALLOW_EPHEMERAL_SQLITE" not in cloudbuild, "Cloud Build ainda permite SQLite efêmero", erros)
         exigir("psycopg" in requirements.casefold(), "Driver PostgreSQL ausente", erros)
         exigir("sqlalchemy" in requirements.casefold(), "Camada de banco PostgreSQL ausente", erros)
+        exigir("alembic" in requirements.casefold(), "Alembic ausente", erros)
         exigir("gunicorn" in requirements.casefold(), "Gunicorn não está nas dependências", erros)
         exigir("USER app" in dockerfile, "Contêiner deve executar sem usuário root", erros)
+        exigir(
+            "COPY database/migrations ./database/migrations" in dockerfile,
+            "Migrations Alembic ausentes da imagem",
+            erros,
+        )
 
     if erros:
         for erro in erros:

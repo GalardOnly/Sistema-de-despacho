@@ -49,6 +49,25 @@ STATUS_ATIVOS_ENTREGADOR = (
 )
 STATUS_RASTREAMENTO = ("em_rota_retirada", "em_rota", "despachado", "coletado")
 STATUS_EM_ANDAMENTO = STATUS_ATIVOS_ENTREGADOR
+POSTGRES_SCHEMA_REVISION = "003_despacho_atomico"
+SQLITE_SCHEMA_OBRIGATORIO = {
+    "unidades": {"id", "nome"},
+    "usuarios": {"id", "papel", "ativo", "disponivel", "codigo_ref", "tipo_veiculo"},
+    "pedidos": {
+        "id",
+        "status",
+        "urgencia_mista",
+        "ts_aceito_admin",
+        "ts_aceito_entregador",
+        "ts_cancelado",
+    },
+    "operadores_solicitante": {"id", "unidade_id", "codigo"},
+    "tipos_coleta_unidade": {"id", "unidade_id", "nome_normalizado"},
+    "localizacoes_pedido": {"id", "pedido_id", "latitude", "longitude"},
+    "indisponibilidades_entregador": {"id", "entregador_id", "tipo"},
+    "chat_mensagens": {"id", "unidade_id", "texto"},
+    "notificacoes": {"id", "papel_destino", "lida"},
+}
 CSRF_SESSION_KEY = "desp_csrf_token"
 CSRF_HEADER = "X-CSRF-Token"
 METODOS_COM_MUTACAO = {"POST", "PUT", "PATCH", "DELETE"}
@@ -97,8 +116,13 @@ def get_db_desp():
 
 
 def verificar_db_desp():
+    if not banco_postgres_configurado() and not os.path.isfile(DESP_DB_PATH):
+        raise RuntimeError("Banco SQLite não inicializado. Execute scripts/init_sqlite.py.")
     con = get_db_desp()
-    con.execute("SELECT 1").fetchone()
+    if banco_postgres_configurado():
+        _validar_schema_postgres(con)
+    else:
+        _validar_schema_sqlite(con)
     return True
 
 
@@ -109,6 +133,16 @@ def close_db_desp(exc):
         if exc is not None:
             d.rollback()
         d.close()
+
+
+def _validar_schema_sqlite(con):
+    for tabela, colunas_obrigatorias in SQLITE_SCHEMA_OBRIGATORIO.items():
+        colunas = {row[1] for row in con.execute(f"PRAGMA table_info({tabela})")}
+        ausentes = colunas_obrigatorias - colunas
+        if ausentes:
+            raise RuntimeError(
+                f"Schema SQLite desatualizado em {tabela}. Execute scripts/init_sqlite.py."
+            )
 
 
 def _ensure_column(con, table, column, definition):
@@ -124,7 +158,10 @@ def _normalizar_veiculo(valor, padrao=None):
 
 def init_db_desp():
     if banco_postgres_configurado():
-        return _init_db_postgres()
+        raise RuntimeError(
+            "A inicialização do PostgreSQL é externa ao servidor. "
+            "Execute scripts/init_supabase.py."
+        )
 
     con = abrir_conexao(DESP_DB_PATH)
     con.executescript(
@@ -281,31 +318,19 @@ def init_db_desp():
 def _validar_schema_postgres(con):
     try:
         versao = con.execute(
-            "SELECT version FROM schema_migrations WHERE version=?",
-            ("003_despacho_atomico",),
+            "SELECT version_num FROM alembic_version WHERE version_num=?",
+            (POSTGRES_SCHEMA_REVISION,),
         ).fetchone()
     except Exception as exc:
         raise RuntimeError(
-            "O schema do Supabase ainda não foi criado. Execute scripts/init_supabase.py antes de iniciar a aplicação."
+            "O schema do Supabase ainda não foi preparado pelo Alembic. "
+            "Execute scripts/init_supabase.py antes de iniciar a aplicação."
         ) from exc
     if not versao:
         raise RuntimeError(
-            "A migration 003_despacho_atomico não foi aplicada no Supabase. "
+            f"A revisão Alembic {POSTGRES_SCHEMA_REVISION} não foi aplicada no Supabase. "
             "Execute scripts/init_supabase.py."
         )
-
-
-def _init_db_postgres():
-    con = abrir_conexao(DESP_DB_PATH)
-    try:
-        _validar_schema_postgres(con)
-        _popular_dados_iniciais(con)
-        con.commit()
-    except Exception:
-        con.rollback()
-        raise
-    finally:
-        con.close()
 
 
 def _popular_dados_iniciais(con):

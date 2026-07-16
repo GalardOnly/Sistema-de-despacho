@@ -1,16 +1,20 @@
-"""Aplica as migrations PostgreSQL no projeto Supabase."""
-
 import os
 import sys
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
+from alembic import command
+from alembic.config import Config
 from psycopg import sql
+from werkzeug.security import generate_password_hash
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations" / "postgresql"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from corridas.despacho import senha_admin_inicial_configurada
 
 
 def _migration_url():
@@ -45,6 +49,45 @@ def _runtime_password():
     if len(senha) < 24:
         raise RuntimeError("SUPABASE_RUNTIME_PASSWORD precisa ter pelo menos 24 caracteres.")
     return senha
+
+
+def _alembic_config(url):
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.attributes["connection_url"] = url
+    return config
+
+
+def _popular_dados_iniciais(conexao):
+    with conexao.cursor() as cursor:
+        cursor.execute("SET search_path TO despacho, public")
+        cursor.execute(
+            """
+            INSERT INTO unidades(nome)
+            VALUES
+                ('Santa Casa'),
+                ('Unimed-Lar'),
+                ('Unimed-Camu 1'),
+                ('Unimed-Camu 2'),
+                ('Unimed Farmais')
+            ON CONFLICT (nome) DO NOTHING
+            """
+        )
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        if cursor.fetchone()[0] == 0:
+            senha = senha_admin_inicial_configurada()
+            cursor.execute(
+                """
+                INSERT INTO usuarios(nome, username, senha_hash, papel, unidade_id)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    "Administrador",
+                    "admin",
+                    generate_password_hash(senha),
+                    "admin",
+                    None,
+                ),
+            )
 
 
 def _configurar_role_runtime(conexao):
@@ -97,7 +140,7 @@ def _configurar_role_runtime(conexao):
             ).format(sql.Identifier(role))
         )
         cursor.execute(
-            sql.SQL("REVOKE INSERT, UPDATE, DELETE ON despacho.schema_migrations FROM {}").format(
+            sql.SQL("REVOKE INSERT, UPDATE, DELETE ON despacho.alembic_version FROM {}").format(
                 sql.Identifier(role)
             )
         )
@@ -109,27 +152,18 @@ def _configurar_role_runtime(conexao):
 
 
 def aplicar_migrations():
-    arquivos = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not arquivos:
-        raise RuntimeError("Nenhuma migration PostgreSQL foi encontrada.")
+    url = _migration_url()
+    command.upgrade(_alembic_config(url), "head")
 
-    with psycopg.connect(_migration_url(), connect_timeout=10) as conexao:
-        for arquivo in arquivos:
-            sql = arquivo.read_text(encoding="utf-8")
-            with conexao.cursor() as cursor:
-                cursor.execute(sql, prepare=False)
-            conexao.commit()
-            print(f"Migration aplicada: {arquivo.name}")
-
+    with psycopg.connect(url, connect_timeout=10) as conexao:
+        _popular_dados_iniciais(conexao)
         _configurar_role_runtime(conexao)
         conexao.commit()
-
         with conexao.cursor() as cursor:
-            cursor.execute(
-                "SELECT version FROM despacho.schema_migrations ORDER BY aplicado_em, version"
-            )
-            versoes = [row[0] for row in cursor.fetchall()]
-    print("Schema Supabase pronto: " + ", ".join(versoes))
+            cursor.execute("SELECT version_num FROM despacho.alembic_version")
+            versao = cursor.fetchone()[0]
+
+    print(f"Schema Supabase pronto na revisão Alembic: {versao}")
     print("Role limitada criada: despacho_app")
 
 

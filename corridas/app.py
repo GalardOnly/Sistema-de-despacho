@@ -5,11 +5,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 if __package__:
     from .database import banco_postgres_configurado, usuario_postgres_runtime
-    from .despacho import despacho_bp, init_db_desp, verificar_db_desp
+    from .despacho import despacho_bp, verificar_db_desp
     from .security import configurar_seguranca
 else:
     from database import banco_postgres_configurado, usuario_postgres_runtime
-    from despacho import despacho_bp, init_db_desp, verificar_db_desp
+    from despacho import despacho_bp, verificar_db_desp
     from security import configurar_seguranca
 
 
@@ -106,7 +106,6 @@ def criar_app():
             return jsonify(status="indisponivel"), 503
         return jsonify(status="pronto"), 200
 
-    init_db_desp()
     return flask_app
 
 

@@ -22,10 +22,8 @@ google-credentials*.json
 application_default_credentials.json
 .gcloud
 docs
-database
 instance
 logs
-scripts
 static
 corridas/tests
 htmlcov

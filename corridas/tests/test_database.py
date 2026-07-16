@@ -4,6 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CORRIDAS_DIR = PROJECT_ROOT / "corridas"
@@ -88,9 +91,19 @@ class DatabaseCompatibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Session pooler"):
                 database._url_postgres()
 
-    def test_initial_schema_is_private_and_blocks_data_api_roles(self):
+    def test_alembic_chain_keeps_schema_private_and_reaches_expected_head(self):
+        config = Config(str(PROJECT_ROOT / "alembic.ini"))
+        scripts = ScriptDirectory.from_config(config)
+        revisions = [revision.revision for revision in scripts.walk_revisions()]
+
+        self.assertEqual(["003_despacho_atomico"], scripts.get_heads())
+        self.assertEqual(
+            ["003_despacho_atomico", "002_urgencia_mista", "001_initial"],
+            revisions,
+        )
+
         migration = (
-            PROJECT_ROOT / "database" / "migrations" / "postgresql" / "001_initial.sql"
+            PROJECT_ROOT / "database" / "migrations" / "versions" / "001_initial.py"
         ).read_text(encoding="utf-8")
 
         for trecho in (
@@ -98,9 +111,8 @@ class DatabaseCompatibilityTests(unittest.TestCase):
             "REVOKE ALL ON SCHEMA despacho FROM PUBLIC",
             "REVOKE ALL ON ALL TABLES IN SCHEMA despacho FROM anon",
             "REVOKE ALL ON ALL TABLES IN SCHEMA despacho FROM authenticated",
-            "CREATE TABLE IF NOT EXISTS pedidos",
-            "CREATE TABLE IF NOT EXISTS chat_mensagens",
-            "001_initial",
+            "CREATE TABLE IF NOT EXISTS despacho.pedidos",
+            "CREATE TABLE IF NOT EXISTS despacho.chat_mensagens",
         ):
             self.assertIn(trecho, migration)
 
@@ -108,8 +120,8 @@ class DatabaseCompatibilityTests(unittest.TestCase):
             PROJECT_ROOT
             / "database"
             / "migrations"
-            / "postgresql"
-            / "002_urgencia_mista.sql"
+            / "versions"
+            / "002_urgencia_mista.py"
         ).read_text(encoding="utf-8")
         self.assertIn("ADD COLUMN IF NOT EXISTS urgencia_mista", mixed_priority_migration)
         self.assertIn("002_urgencia_mista", mixed_priority_migration)
@@ -118,8 +130,8 @@ class DatabaseCompatibilityTests(unittest.TestCase):
             PROJECT_ROOT
             / "database"
             / "migrations"
-            / "postgresql"
-            / "003_despacho_atomico.sql"
+            / "versions"
+            / "003_despacho_atomico.py"
         ).read_text(encoding="utf-8")
         self.assertIn(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_pedidos_entregador_ativo",
@@ -133,6 +145,8 @@ class DatabaseCompatibilityTests(unittest.TestCase):
         )
         self.assertIn("GRANT SELECT, INSERT, UPDATE", role_script)
         self.assertNotIn("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES", role_script)
+        self.assertIn('command.upgrade(_alembic_config(url), "head")', role_script)
+        self.assertNotIn('glob("*.sql")', role_script)
 
 
 if __name__ == "__main__":

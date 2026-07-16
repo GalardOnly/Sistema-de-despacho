@@ -1,5 +1,6 @@
 import importlib
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,7 @@ class AppEntrypointTests(unittest.TestCase):
         os.environ["APP_SECRET"] = "segredo-testes-entrypoint-1234567890"
         os.environ["DESPACHO_ADMIN_SENHA_INICIAL"] = "senha-admin-testes"
 
+        despacho.init_db_desp()
         self.app_module = importlib.import_module("app")
         security.login_limiter.reset()
         self.client = self.app_module.app.test_client()
@@ -128,6 +130,83 @@ class AppEntrypointTests(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr + proc.stdout)
 
+    def test_wsgi_import_does_not_create_or_migrate_database(self):
+        database_path = Path(self.tempdir.name) / "startup-must-not-create.db"
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["APP_SECRET"] = "segredo-testes-sem-migration-123456789012345"
+        env["DESPACHO_DB_PATH"] = str(database_path)
+
+        script = (
+            "import sys; "
+            f"sys.path.insert(0, {str(PROJECT_ROOT)!r}); "
+            "from corridas.app import app; "
+            f"print({str(database_path)!r})"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=self.tempdir.name,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr + proc.stdout)
+        self.assertFalse(database_path.exists())
+
+    def test_readiness_rejects_uninitialized_sqlite(self):
+        original = despacho.DESP_DB_PATH
+        despacho.DESP_DB_PATH = str(Path(self.tempdir.name) / "not-initialized.db")
+        try:
+            response = self.client.get("/readyz")
+        finally:
+            despacho.DESP_DB_PATH = original
+
+        self.assertEqual(503, response.status_code)
+        self.assertEqual("indisponivel", response.get_json()["status"])
+
+    def test_readiness_rejects_outdated_sqlite_schema(self):
+        database_path = Path(self.tempdir.name) / "outdated.db"
+        con = sqlite3.connect(database_path)
+        try:
+            con.execute("CREATE TABLE usuarios(id INTEGER PRIMARY KEY, papel TEXT, ativo INTEGER)")
+            con.commit()
+        finally:
+            con.close()
+
+        original = despacho.DESP_DB_PATH
+        despacho.DESP_DB_PATH = str(database_path)
+        try:
+            response = self.client.get("/readyz")
+        finally:
+            despacho.DESP_DB_PATH = original
+
+        self.assertEqual(503, response.status_code)
+        self.assertEqual("indisponivel", response.get_json()["status"])
+
+    def test_sqlite_initializer_is_explicit_and_idempotent(self):
+        database_path = Path(self.tempdir.name) / "explicit-init.db"
+        env = os.environ.copy()
+        env.pop("DATABASE_URL", None)
+        env["DESPACHO_DB_PATH"] = str(database_path)
+        env["DESPACHO_ADMIN_SENHA_INICIAL"] = "senha-admin-init-testes"
+        command = [sys.executable, str(PROJECT_ROOT / "scripts" / "init_sqlite.py")]
+
+        first = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
+        second = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
+
+        self.assertEqual(0, first.returncode, first.stderr + first.stdout)
+        self.assertEqual(0, second.returncode, second.stderr + second.stdout)
+        con = sqlite3.connect(database_path)
+        try:
+            admin_count = con.execute(
+                "SELECT COUNT(*) FROM usuarios WHERE username='admin'"
+            ).fetchone()[0]
+        finally:
+            con.close()
+        self.assertEqual(1, admin_count)
+
     def test_cloud_run_rejects_sqlite_marked_as_production(self):
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
@@ -214,6 +293,8 @@ class AppEntrypointTests(unittest.TestCase):
 
         self.assertIn("corridas.app:app", dockerfile)
         self.assertIn("gunicorn", requirements)
+        self.assertIn("Alembic", requirements)
+        self.assertIn("COPY database/migrations ./database/migrations", dockerfile)
         self.assertIn("APP_ENV=homologation", cloudbuild)
         self.assertIn("DATABASE_URL=despacho-database-url:latest", cloudbuild)
         self.assertNotIn("ALLOW_EPHEMERAL_SQLITE=1", cloudbuild)
