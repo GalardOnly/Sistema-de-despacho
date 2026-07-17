@@ -6,7 +6,7 @@
 <title>Entregador · Sistema de Despacho de Coletas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<style>
+<style nonce="{{ g.csp_nonce }}">
   :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
     --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
     --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
@@ -27,7 +27,7 @@
   .field{margin-bottom:10px}.field label{display:block;font-size:11px;font-weight:800;color:var(--muted);margin-bottom:5px}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13px Inter;color:var(--ink)}
   .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:9px;padding:11px;font-weight:800;cursor:pointer}
   .hidden{display:none}.empty{text-align:center;color:var(--muted-2);font-size:13px;padding:34px 10px;border:1px dashed var(--border);border-radius:12px}
-  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.danger{border-left-color:#a93226}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
@@ -53,14 +53,14 @@
 </div>
 <div class="toast" id="toast"><span id="toastTxt"></span></div>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const $ = id => document.getElementById(id);
 let toastTimer, disponibilidadeAtual=false, ocupado=false, trackingPedidoId=null, trackingTimer=null;
 let rascunhosJustificativa = {};
 const STATUS_GPS = ['em_rota_retirada','em_rota','despachado','coletado'];
 const URG_LABELS = {rotina:'ROTINA (12 horas)', urgente:'URGENTE (40 min)', emergencia:'EMERGÊNCIA (15 min)'};
 
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.classList.toggle('danger',type==='danger');el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,window.despachoFetchOptions(opt));const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
 function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
@@ -127,7 +127,7 @@ function cardPedido(p){
   return `<div class="item">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)}</div>
-    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span><span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
+    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span>${p.urgencia_mista?'<span class="tag urgente">PRIORIDADES MISTAS</span>':''}<span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
     <div class="meta">${slaLinha(p)}</div>
     ${STATUS_GPS.includes(p.status)?'<div class="gps" id="gpsStatus">GPS ativo · atualizações a cada 15 segundos</div>':''}
     ${p.status==='despachado'&&atrasado?`<div class="field"><label>Justificativa de atraso</label><textarea id="justificativa-atraso-${p.id}" data-justificativa-atraso="${p.id}" rows="3" placeholder="Justificativa de atraso obrigatória...">${escapeHtml(justificativaRascunho(p.id))}</textarea></div>`:''}

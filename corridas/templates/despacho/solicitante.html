@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solicitante · Sistema de Despacho de Coletas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style nonce="{{ g.csp_nonce }}">
+  :root{--bg:#eef4f0;--surface:#fff;--surface-2:#f6faf7;--border:#dde8e0;--ink:#111d16;--muted:#5a6e61;--muted-2:#8a9e92;
+    --primary:#009962;--primary-dark:#007a4d;--header:#042416;--green-bg:#e2f7ef;--green-ink:#007a4d;
+    --blue-bg:#eff6ff;--blue-ink:#1d4f91;--amber-bg:#fff8e8;--amber-ink:#9a5b00;--red-bg:#fff0ef;--red-ink:#b42f25;--slate-bg:#f1f4f2;--slate-ink:#526158;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{background:var(--bg)}
+  body{min-height:100vh;font-family:Inter,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  button,input,select,textarea{font-family:inherit}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid rgba(0,153,98,.24);outline-offset:2px}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  .hidden{display:none!important}
+  header{position:sticky;top:0;z-index:90;background:var(--header);color:#fff;box-shadow:0 8px 24px rgba(3,31,18,.16)}
+  .header-inner{position:relative;width:100%;min-height:88px;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .header-copy{min-width:0}.eyebrow{margin-bottom:4px;color:#00c46a;font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
+  header h1{font-size:18px;line-height:1.2}.sub{margin-top:4px;color:rgba(255,255,255,.58);font-size:11px}
+  header .brand-logo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;pointer-events:none}
+  .brand-wordmark{color:#00c46a;font-size:24px;font-weight:800;letter-spacing:-.06em;line-height:1}.brand-wordmark span{color:#fff}
+  header a{color:rgba(255,255,255,.82);text-decoration:none;background:rgba(255,255,255,.1);border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;transition:.18s}
+  header a:hover{color:#fff;background:rgba(255,255,255,.16)}
+  .wrap{max-width:1024px;margin:0 auto;padding:24px 20px 104px}
+  .module-tabs{display:flex;gap:6px;margin-bottom:24px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 4px 14px rgba(15,93,42,.035)}
+  .module-tabs button{flex:1;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:11px;padding:11px 14px;font-size:12.5px;font-weight:800;cursor:pointer;transition:.18s}
+  .module-tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 3px 9px rgba(0,125,78,.16)}
+  .module-tabs button:not(.on):hover{background:var(--bg);color:var(--header)}
+  .pane{display:none}.pane.on{display:block}
+  .solicitante-main{max-width:672px;margin:0 auto}.grid2{display:grid;grid-template-columns:1fr;gap:20px}
+  .card{margin-bottom:20px;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 4px 16px rgba(15,93,42,.04)}
+  .card-title{display:flex;align-items:center;gap:10px;margin-bottom:22px}.card-title-icon{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:var(--primary);color:#fff;font-size:16px;font-weight:800}
+  .card h2{font-size:15px}.card>h2{margin-bottom:18px}
+  .field{margin-bottom:16px}.field label,.field-label{display:block;margin-bottom:8px;color:var(--muted);font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+  .field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;color:var(--ink);font-size:13.5px;transition:.18s}
+  .field input::placeholder,.field textarea::placeholder{color:#9aac9f}.field textarea{resize:vertical}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,153,98,.1)}
+  .mixed-priority{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:.18s}
+  .mixed-priority:hover{border-color:#b6dfc5}.mixed-priority:has(input:checked){background:var(--amber-bg);border-color:#e9c879}
+  .mixed-priority input{width:17px;height:17px;margin-top:1px;accent-color:var(--primary);flex:0 0 auto}.mixed-priority strong{display:block;margin-bottom:4px;color:var(--ink);font-size:12.5px}.mixed-priority span{display:block;color:var(--muted);font-size:11px;line-height:1.5}
+  .choice-row{display:flex;gap:8px;margin-bottom:18px}.choice-row button{flex:1;min-height:46px;border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:12px;padding:9px 8px;font-size:12px;font-weight:800;cursor:pointer;transition:.18s}
+  .choice-row button:hover{background:var(--surface-2)}.choice-row button span,.choice-row button small{display:block}.choice-row button small{margin-top:2px;font-size:10px;font-weight:600;opacity:.68}
+  .choice-row button.on{border-color:var(--primary);box-shadow:0 0 0 2px rgba(0,153,98,.12)}.choice-row button.on.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#a9c9f5}.choice-row button.on.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#e9c879}.choice-row button.on.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#efb2ad}.choice-row button.on.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#9fd4b8}
+  .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:12px;padding:13px 16px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 3px 8px rgba(0,125,78,.12);transition:.18s}.primary:hover{background:var(--primary-dark)}
+  .secondary{width:100%;border:1px solid var(--border);background:#fff;color:var(--primary);border-radius:10px;padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer}.secondary:hover{border-color:var(--primary);background:var(--green-bg)}.link-button{border:none;background:transparent;color:var(--primary);font-weight:800;cursor:pointer}
+  .rowlist{display:flex;flex-direction:column;gap:10px}.pedidos-scroll{max-height:620px;overflow-y:auto;padding-right:5px;scrollbar-color:#a9bbb0 transparent;scrollbar-width:thin}
+  .item{position:relative;padding:16px;background:var(--surface-2);border:1px solid var(--border);border-left:3px solid #b9c6be;border-radius:12px}.item.rotina{border-left-color:#65a0e8}.item.urgente{border-left-color:#e3a21b}.item.emergencia{border-left-color:#dc4a41}
+  .item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}.proto{font-size:12px;font-weight:800}.route{margin-bottom:10px;color:var(--muted);font-size:12px;line-height:1.45}
+  .tag,.status{display:inline-flex;align-items:center;gap:5px;margin:0 4px 4px 0;padding:4px 8px;border:1px solid transparent;border-radius:7px;font-size:9.8px;font-weight:800;letter-spacing:.2px}.status{border-radius:999px;text-transform:uppercase}
+  .tag.tipo{background:var(--slate-bg);color:var(--slate-ink);border-color:#e2e8e4}.tag.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#cbead9}.tag.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#d3e3fb}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#f1dfb7}.tag.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#f4d0cd}
+  .status.solicitado{background:var(--slate-bg);color:var(--slate-ink);border-color:#dfe6e1}.status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink);border-color:#f1dfb7}.status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink);border-color:#d3e3fb}.status.entregue{background:var(--green-bg);color:var(--green-ink);border-color:#cbead9}.status.cancelado{background:var(--red-bg);color:var(--red-ink);border-color:#f4d0cd}
+  .public-times,.meta{display:flex;gap:5px 16px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:11px;line-height:1.5}.public-times strong,.meta strong{color:var(--ink)}.sla-overdue{color:var(--red-ink);font-weight:800}
+  .chip-cancel{margin-top:12px;border:1px solid #efb6b1;color:var(--red-ink);background:#fff;border-radius:8px;padding:7px 11px;font-size:11px;font-weight:800;cursor:pointer}.chip-cancel:hover{background:var(--red-bg)}
+  .map{height:190px;margin-top:12px;border:1px solid var(--border);border-radius:12px;z-index:1}.map-meta{margin-top:6px;color:var(--muted);font-size:10.5px}.empty{text-align:center;color:var(--muted-2);font-size:12px;padding:28px;border:1px dashed var(--border);border-radius:12px}
+  .form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}.form-grid .field{grid-column:span 6}.form-grid .field.full{grid-column:span 12}.form-grid .field.third{grid-column:span 4}
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}.toolbar .field{min-width:260px;flex:1;margin-bottom:0}
+  .mvp-note{margin-bottom:16px;padding:11px 13px;background:var(--green-bg);color:var(--green-ink);border:1px solid #b6dfc5;border-radius:11px;font-size:11.5px;line-height:1.45}
+  .table-shell{width:100%;overflow-x:auto}.patient-table,.stock-table{width:100%;min-width:650px;border-collapse:separate;border-spacing:0 8px;font-size:12px}.patient-table th,.stock-table th{text-align:left;color:var(--muted-2);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;padding:0 10px}.patient-table td,.stock-table td{background:var(--surface-2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:11px 10px;vertical-align:middle}.patient-table td:first-child,.stock-table td:first-child{border-left:1px solid var(--border);border-radius:10px 0 0 10px;font-weight:800}.patient-table td:last-child,.stock-table td:last-child{border-right:1px solid var(--border);border-radius:0 10px 10px 0}
+  .mini-actions{display:flex;gap:6px;flex-wrap:wrap}.mini-actions button{border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:8px;padding:6px 8px;font-size:10.5px;font-weight:800;cursor:pointer}.mini-actions button:hover{border-color:var(--primary);color:var(--primary)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}.stat{padding:16px;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--primary);border-radius:14px}.stat.warn{border-left-color:#d98b00}.stat.danger{border-left-color:#c0392b}.stat b{display:block;margin-bottom:4px;font-size:22px}.stat span{color:var(--muted);font-size:11px}
+  .chat-box{height:224px;overflow:auto;padding:12px;background:#fff;display:flex;flex-direction:column;gap:8px}.msg{padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px}.msg.admin{background:var(--green-bg);border-color:#b6dfc5;border-left:3px solid var(--primary)}.msg .who{margin-bottom:4px;color:var(--muted-2);font-size:10px;font-weight:800}.msg p{font-size:12.5px;line-height:1.45}
+  .floating-chat{position:fixed;right:24px;bottom:24px;z-index:80;border:none;background:var(--primary);color:#fff;border-radius:999px;padding:13px 19px;font-size:13px;font-weight:800;box-shadow:0 10px 30px rgba(0,100,60,.3);cursor:pointer;transition:.18s}.floating-chat:hover{background:var(--primary-dark);transform:translateY(-1px)}
+  .floating-chat-panel{position:fixed;right:24px;bottom:82px;z-index:79;width:min(400px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 52px rgba(12,45,26,.2);opacity:0;transform:translateY(12px);pointer-events:none;transition:.2s;overflow:hidden}.floating-chat-panel.open{opacity:1;transform:translateY(0);pointer-events:auto}.floating-chat-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:16px;border-bottom:1px solid #f0f5f1}.floating-chat-head h2{margin-bottom:3px;font-size:14px}.floating-chat-head span{color:var(--muted);font-size:11.5px}.floating-chat-close{border:1px solid var(--border);background:var(--surface-2);color:var(--muted);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:800;cursor:pointer}.floating-chat-panel>.field{margin:0;padding:12px 12px 0}.floating-chat-panel>.primary{width:calc(100% - 24px);margin:8px 12px 12px;padding:11px}
+  .toast{position:fixed;left:50%;bottom:26px;z-index:130;transform:translateX(-50%) translateY(16px);background:#021a0e;color:#fff;padding:12px 18px;border-radius:10px;border-left:4px solid #00d47a;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.22s;box-shadow:0 16px 34px rgba(0,0,0,.18)}.toast.danger{border-left-color:#ef544a}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media(max-width:820px){.form-grid .field,.form-grid .field.third{grid-column:span 12}.stats{grid-template-columns:1fr}.module-tabs{position:sticky;top:100px;z-index:20}.floating-chat{right:16px;bottom:16px}.floating-chat-panel{right:16px;bottom:72px}}
+  @media(max-width:620px){.header-inner{min-height:82px;padding:13px 16px}.header-copy{max-width:65%}.eyebrow{font-size:8px}header h1{font-size:15px}.sub{font-size:10px}header .brand-logo{display:none}.wrap{padding:16px 12px 96px}.module-tabs{margin-bottom:16px}.module-tabs button{padding:10px 6px;font-size:10.5px}.card{padding:18px}.choice-row{gap:6px}.floating-chat{padding:12px 15px}.notification-panel{position:fixed;right:10px;top:82px;width:calc(100vw - 20px)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="header-copy">
+      <div class="eyebrow">Unimed · Despacho</div>
+      <h1>Sistema de Despacho de Coletas</h1>
+      <div class="sub">Solicitante · {{ unidade }}</div>
+    </div>
+    <div class="brand-logo">
+      <span class="brand-wordmark" role="img" aria-label="Unimed">uni<span>med</span></span>
+    </div>
+    <div class="notification-actions">
+      {% include "despacho/_notificacoes.html" %}
+      <a href="/despacho/logout">Sair</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="module-tabs" aria-label="Módulos do solicitante">
+    <button class="on" type="button" data-module="solicitante">Solicitante</button>
+    <button type="button" data-module="pacientes">Cadastro de Pacientes</button>
+    <button type="button" data-module="estoque">Sistema de Estoque</button>
+  </div>
+
+  <section class="pane on" id="pane-solicitante">
+    <div class="solicitante-main">
+      <div class="card">
+        <div class="card-title">
+          <span class="card-title-icon" aria-hidden="true">+</span>
+          <h2>Nova coleta</h2>
+        </div>
+        <div class="field">
+          <label>Nome de quem está solicitando</label>
+          <input id="operadorNome" autocomplete="off" placeholder="Digite seu nome" required>
+        </div>
+        <div class="field"><label>Destino</label><select id="selDestino"></select></div>
+        <label class="mixed-priority" for="urgenciaMista">
+          <input id="urgenciaMista" type="checkbox">
+          <span>
+            <strong>Esta coleta reúne exames com urgências diferentes</strong>
+            <span>Marque quando houver prioridades misturadas no mesmo envio. Use abaixo a maior urgência presente.</span>
+          </span>
+        </label>
+        <div class="field"><label>Tipo de exame</label><select id="selTipo"></select></div>
+        <div class="field hidden" id="tipoOutroBox">
+          <label>Nome do que será coletado</label>
+          <input id="tipoOutro" autocomplete="off" placeholder="Digite o tipo de coleta">
+        </div>
+        <label class="field-label">Veículo necessário</label>
+        <div class="choice-row" id="veiculoRow">
+          <button class="on vehicle" data-vehicle="moto"><span>🛵 Moto</span></button>
+          <button data-vehicle="carro"><span>🚗 Carro</span></button>
+        </div>
+        <label class="field-label" id="urgenciaLabel">Nível de urgência</label>
+        <div class="choice-row" id="urgRow"></div>
+        <button class="primary" id="btnSolicitar">Solicitar coleta</button>
+      </div>
+
+      <div class="card">
+        <h2>Pedidos de {{ unidade }}</h2>
+        <div class="rowlist pedidos-scroll" id="lista"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane" id="pane-pacientes">
+    <div class="card">
+      <h2>Cadastro de Pacientes</h2>
+      <div class="mvp-note"><strong>MVP visual:</strong> esta área está preparada para validação do fluxo. Não use dados reais sensíveis nesta fase.</div>
+      <div class="form-grid">
+        <div class="field full"><label>Nome completo</label><input id="pacienteNome" autocomplete="off" placeholder="Nome do paciente"></div>
+        <div class="field third"><label>CPF/cartão</label><input id="pacienteDocumento" autocomplete="off" placeholder="CPF ou número da carteirinha"></div>
+        <div class="field third"><label>Telefone</label><input id="pacienteTelefone" autocomplete="off" placeholder="(00) 00000-0000"></div>
+        <div class="field third"><label>Data de nascimento</label><input id="pacienteNascimento" type="date"></div>
+        <div class="field"><label>Convênio</label><select id="pacienteConvenio"><option>Unimed</option><option>Particular</option><option>Outro</option></select></div>
+        <div class="field"><label>Unidade vinculada</label><input id="pacienteUnidade" value="{{ unidade }}" autocomplete="off"></div>
+        <div class="field full"><label>Observações</label><textarea id="pacienteObs" rows="3" placeholder="Observações operacionais para a equipe"></textarea></div>
+        <div class="field full"><button class="primary" id="btnPacienteMvp" type="button">Cadastrar paciente no MVP</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <h2>Pacientes cadastrados</h2>
+        <div class="field"><label>Busca rápida</label><input id="pacienteBusca" autocomplete="off" placeholder="Buscar por nome, CPF ou cartão..."></div>
+      </div>
+      <div class="table-shell">
+        <table class="patient-table">
+          <thead><tr><th>Nome</th><th>CPF/cartão</th><th>Telefone</th><th>Convênio</th><th>Ações</th></tr></thead>
+          <tbody id="pacientesMvpLista"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane" id="pane-estoque">
+    <div class="stats" id="estoqueResumo"></div>
+
+    <div class="card">
+      <div class="toolbar">
+        <div>
+          <h2>Sistema de Estoque</h2>
+          <div class="mvp-note"><strong>MVP visual:</strong> indicadores e itens de exemplo para validar a operação antes de conectar a um banco real.</div>
+        </div>
+        <button class="secondary" id="btnAddEstoqueMvp" type="button">+ Adicionar item</button>
+      </div>
+      <div class="table-shell">
+        <table class="stock-table">
+          <thead><tr><th>Item</th><th>Qtd atual</th><th>Status</th><th>Alerta mínimo</th><th>Ações</th></tr></thead>
+          <tbody id="estoqueTabela"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<section class="floating-chat-panel" id="floatingChatPanel" aria-label="Chat interno com administrador">
+  <div class="floating-chat-head">
+    <div>
+      <h2>Chat interno</h2>
+      <span>Linha direta com o administrador</span>
+    </div>
+    <button class="floating-chat-close" id="floatingChatClose" type="button">Fechar</button>
+  </div>
+  <div class="chat-box" id="chatMensagens"></div>
+  <div class="field"><label>Mensagem para o admin</label><textarea id="chatTexto" rows="3" placeholder="Digite sua mensagem..."></textarea></div>
+  <button class="primary" id="btnEnviarChat">Enviar mensagem</button>
+</section>
+
+<button class="floating-chat" id="floatingChatButton" type="button">💬 Fale com o administrador</button>
+<div class="toast" id="toast"><span id="toastTxt"></span></div>
+
+<script nonce="{{ g.csp_nonce }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script nonce="{{ g.csp_nonce }}">
+const $ = id => document.getElementById(id);
+const URGENCIAS = [
+  {id:"rotina",nome:"Rotina",tempo:"12 horas",label:"ROTINA (12 horas)"},
+  {id:"urgente",nome:"Urgente",tempo:"40 min",label:"URGENTE (40 min)"},
+  {id:"emergencia",nome:"Emergência",tempo:"15 min",label:"EMERGÊNCIA (15 min)"}
+];
+const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];
+let tiposColeta = [];
+let urgenciaSelecionada = "rotina";
+let veiculoSelecionado = "moto";
+const minhaUnidade = "{{ unidade }}";
+const mapas = new Map();
+let toastTimer;
+
+function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+const fmtHora = ts => ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
+function veiculoLabel(v){return v==='carro'?'Carro':'Moto';}
+function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'ENTREGADOR ACIONADO',em_rota_retirada:'ENTREGADOR A CAMINHO',em_rota:'ENTREGADOR A CAMINHO',despachado:'EXAME RETIRADO / EM ENTREGA',coletado:'EXAME RETIRADO',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
+function slaLinha(p){return p.sla?.atrasado?`<span class="sla-overdue">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.classList.toggle('danger',type==='danger');el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+async function api(url,opt){const r=await fetch(url,window.despachoFetchOptions(opt));const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
+async function apiColecao(url,maxPaginas=100){const itens=[];let cursor=null;for(let pagina=0;pagina<maxPaginas;pagina++){const separador=url.includes('?')?'&':'?';const alvo=cursor?`${url}${separador}antes_id=${encodeURIComponent(cursor)}`:url;const r=await fetch(alvo,window.despachoFetchOptions());const dados=await r.json().catch(()=>({}));if(!r.ok)throw new Error(dados.error||('erro '+r.status));if(!Array.isArray(dados))throw new Error('resposta de coleção inválida');itens.push(...dados);cursor=r.headers.get('X-Next-Cursor');if(!cursor)return itens;}throw new Error('A consulta excedeu o limite de páginas permitido.');}
+
+const pacientesMvp = [
+  {nome:'Maria de Souza', documento:'***.123.456-**', telefone:'(14) 99999-0101', convenio:'Unimed'},
+  {nome:'João Pereira', documento:'Cartão 84521', telefone:'(14) 98888-0202', convenio:'Unimed'}
+];
+const estoqueMvp = [
+  {item:'Tubo de sangue', qtd:450, unidade:'u', minimo:100},
+  {item:'Seringa 5ml', qtd:12, unidade:'u', minimo:50},
+  {item:'Etiqueta de coleta', qtd:80, unidade:'u', minimo:70}
+];
+
+function setupModulos(){
+  document.querySelectorAll('[data-module]').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-module]').forEach(b=>b.classList.remove('on'));
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+    btn.classList.add('on');
+    const pane = $('pane-'+btn.dataset.module);
+    if(pane) pane.classList.add('on');
+  }));
+}
+function setupChatFlutuante(){
+  const panel=$('floatingChatPanel'), open=$('floatingChatButton'), close=$('floatingChatClose');
+  if(!panel||!open||!close)return;
+  open.addEventListener('click',()=>panel.classList.toggle('open'));
+  close.addEventListener('click',()=>panel.classList.remove('open'));
+}
+function renderPacientesMvp(){
+  const busca=($('pacienteBusca')?.value||'').trim().toLowerCase();
+  const rows=pacientesMvp.filter(p=>!busca||[p.nome,p.documento,p.telefone,p.convenio].some(v=>String(v).toLowerCase().includes(busca)));
+  $('pacientesMvpLista').innerHTML = rows.map(p=>`
+    <tr>
+      <td>${escapeHtml(p.nome)}</td>
+      <td>${escapeHtml(p.documento)}</td>
+      <td>${escapeHtml(p.telefone)}</td>
+      <td>${escapeHtml(p.convenio)}</td>
+      <td><div class="mini-actions"><button type="button">Editar</button><button type="button">Histórico</button></div></td>
+    </tr>`).join('') || '<tr><td colspan="5">Nenhum paciente encontrado no MVP.</td></tr>';
+}
+function renderEstoqueMvp(){
+  const criticos=estoqueMvp.filter(i=>i.qtd<i.minimo).length;
+  $('estoqueResumo').innerHTML = `
+    <div class="stat"><b>${estoqueMvp.length}</b><span>Total de itens</span></div>
+    <div class="stat ${criticos?'danger':''}"><b>${criticos}</b><span>Itens críticos</span></div>
+    <div class="stat warn"><b>MVP</b><span>Sem baixa automática ainda</span></div>`;
+  $('estoqueTabela').innerHTML = estoqueMvp.map((i,idx)=>{
+    const critico=i.qtd<i.minimo, atencao=!critico && i.qtd<=i.minimo*1.25;
+    const status=critico?'CRÍTICO':atencao?'ATENÇÃO':'OK';
+    const cls=critico?'emergencia':atencao?'urgente':'vehicle';
+    return `<tr>
+      <td>${escapeHtml(i.item)}</td>
+      <td><strong>${i.qtd} ${escapeHtml(i.unidade)}</strong></td>
+      <td><span class="tag ${cls}">${status}</span></td>
+      <td>${i.minimo} ${escapeHtml(i.unidade)}</td>
+      <td><div class="mini-actions"><button type="button" data-stock-edit="${idx}">Editar</button></div></td>
+    </tr>`;
+  }).join('');
+}
+
+function setupForm(){
+  $('urgRow').innerHTML = URGENCIAS.map(u=>`<button class="${u.id===urgenciaSelecionada?'on '+u.id:''}" data-urg="${u.id}" aria-label="${u.label}"><span>${u.nome}</span><small>${u.tempo}</small></button>`).join('');
+  $('urgenciaLabel').textContent = $('urgenciaMista').checked ? 'Maior nível de urgência presente' : 'Nível de urgência';
+}
+function renderTiposColeta(valorPreferido){
+  $('selTipo').innerHTML = tiposColeta.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  if(valorPreferido && tiposColeta.includes(valorPreferido)) $('selTipo').value = valorPreferido;
+  atualizarTipoOutro();
+}
+async function carregarTiposColeta(valorPreferido){
+  tiposColeta = await api('/despacho/api/tipos-exame');
+  renderTiposColeta(valorPreferido);
+}
+function atualizarTipoOutro(){
+  const outro = $('selTipo').value === 'Outro';
+  $('tipoOutroBox').classList.toggle('hidden', !outro);
+  if(!outro) $('tipoOutro').value = '';
+}
+$('urgRow').addEventListener('click', e=>{
+  const botao=e.target.closest('button[data-urg]');
+  if(!botao)return;
+  urgenciaSelecionada=botao.dataset.urg;
+  setupForm();
+});
+$('urgenciaMista').addEventListener('change', setupForm);
+$('selTipo').addEventListener('change', atualizarTipoOutro);
+$('veiculoRow').addEventListener('click', e=>{
+  const botao=e.target.closest('button[data-vehicle]');
+  if(!botao)return;
+  const v=botao.dataset.vehicle;
+  veiculoSelecionado=v;
+  document.querySelectorAll('#veiculoRow button').forEach(b=>b.classList.toggle('on',b.dataset.vehicle===v));
+});
+
+async function carregarDestinos(){
+  const unidades = await apiColecao('/despacho/api/unidades');
+  unidades.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  $('selDestino').innerHTML = unidades.filter(u=>u.nome!==minhaUnidade).map(u=>`<option value="${u.id}">${escapeHtml(u.nome)}</option>`).join('');
+}
+
+$('btnSolicitar').addEventListener('click', async () => {
+  const operadorNome = $('operadorNome').value.trim();
+  if(!operadorNome){toast('Informe seu nome antes de solicitar','danger');return;}
+  const tipoSelecionado = $('selTipo').value;
+  const tipoOutro = $('tipoOutro').value.trim();
+  if(tipoSelecionado === 'Outro' && !tipoOutro){toast('Informe o nome do que será coletado','danger');return;}
+  const body = {destino_id:parseInt($('selDestino').value),tipo:tipoSelecionado,tipo_outro:tipoOutro,urgencia:urgenciaSelecionada,urgencia_mista:$('urgenciaMista').checked,tipo_veiculo:veiculoSelecionado,operador_nome:operadorNome};
+  try{
+    const pedido = await api('/despacho/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('Pedido solicitado');
+    $('urgenciaMista').checked = false;
+    setupForm();
+    await carregarTiposColeta(pedido.tipo);
+    renderLista();
+  }
+  catch(e){toast(e.message,'danger');}
+});
+
+async function renderLista(){
+  const pedidos = await api('/despacho/api/pedidos');
+  const list = $('lista');
+  mapas.forEach(m=>m.remove()); mapas.clear();
+  if(!pedidos.length){list.innerHTML='<div class="empty">Nenhum pedido ainda.</div>';return;}
+  list.innerHTML = pedidos.map(p=>`
+    <div class="item ${p.urgencia}">
+      <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
+      <div class="route">${escapeHtml(p.origem)} → ${escapeHtml(p.destino)}</div>
+      <div><span class="tag tipo">${escapeHtml(p.tipo)}</span><span class="tag ${p.urgencia}">${escapeHtml(p.urgencia_label)}</span>${p.urgencia_mista?'<span class="tag urgente">PRIORIDADES MISTAS</span>':''}<span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span></div>
+      <div class="meta"><span><strong>Solicitado por</strong> ${p.operador_nome?escapeHtml(p.operador_nome):'cadastro antigo não informado'}</span></div>
+      <div class="public-times"><span><strong>Solicitado às</strong> ${fmtHora(p.ts.solicitado)}</span><span><strong>Entregue às</strong> ${fmtHora(p.ts.entregue)}</span><span>${slaLinha(p)}</span></div>
+      ${STATUS_MAPA.includes(p.status)?`<div class="map" id="map-${p.id}"></div><div class="map-meta" id="map-meta-${p.id}">Aguardando localização...</div>`:''}
+      ${p.status==='solicitado' && p.origem===minhaUnidade?`<button class="chip-cancel" data-cancel="${p.id}">Cancelar pedido</button>`:''}
+    </div>`).join('');
+  await Promise.all(pedidos.filter(p=>STATUS_MAPA.includes(p.status)).map(atualizarMapa));
+}
+
+async function atualizarMapa(p){
+  const el=$('map-'+p.id); if(!el) return;
+  const pontos=await api(`/despacho/api/pedidos/${p.id}/localizacoes`);
+  const mapa=L.map(el).setView([-22.2,-49.9],12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(mapa);
+  mapas.set(p.id,mapa);
+  if(!pontos.length){$('map-meta-'+p.id).textContent='Entregador em rota; aguardando primeira posição.';return;}
+  const coords=pontos.map(x=>[x.latitude,x.longitude]);
+  L.polyline(coords,{color:'#009962',weight:4}).addTo(mapa); L.marker(coords[coords.length-1]).addTo(mapa);
+  mapa.fitBounds(coords.length>1?coords:L.latLngBounds(coords[0],coords[0]).pad(.08));
+  $('map-meta-'+p.id).textContent=`Última posição: ${fmtHora(pontos[pontos.length-1].ts)}`;
+  setTimeout(()=>mapa.invalidateSize(),0);
+}
+
+document.addEventListener('click', async e=>{
+  const id=e.target.dataset.cancel;if(!id)return;
+  try{await api(`/despacho/api/pedidos/${id}/cancelar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});toast('Pedido cancelado');renderLista();}
+  catch(err){toast(err.message,'danger');}
+});
+
+$('pacienteBusca').addEventListener('input', renderPacientesMvp);
+$('btnPacienteMvp').addEventListener('click',()=>{
+  const nome=$('pacienteNome').value.trim();
+  if(!nome){toast('Informe o nome do paciente para demonstrar o cadastro','danger');return;}
+  pacientesMvp.unshift({
+    nome,
+    documento:$('pacienteDocumento').value.trim()||'não informado',
+    telefone:$('pacienteTelefone').value.trim()||'não informado',
+    convenio:$('pacienteConvenio').value
+  });
+  ['pacienteNome','pacienteDocumento','pacienteTelefone','pacienteNascimento','pacienteObs'].forEach(id=>$(id).value='');
+  renderPacientesMvp();
+  toast('Paciente adicionado à lista visual do MVP');
+});
+$('btnAddEstoqueMvp').addEventListener('click',()=>toast('No MVP atual, o estoque é visual. A gravação real fica para a próxima fase.'));
+document.addEventListener('click', e=>{
+  if(e.target.dataset.stockEdit !== undefined) toast('Edição de estoque demonstrativa no MVP atual.');
+});
+
+async function carregarChat(){
+  const msgs=await api('/despacho/api/chat');
+  $('chatMensagens').innerHTML = msgs.map(m=>`<div class="msg ${m.remetente_papel==='admin'?'admin':''}"><div class="who">${escapeHtml(m.remetente_nome)} · ${fmtHora(m.ts)}</div><p>${escapeHtml(m.texto)}</p></div>`).join('') || '<div class="empty">Sem mensagens ainda.</div>';
+  $('chatMensagens').scrollTop=$('chatMensagens').scrollHeight;
+}
+$('btnEnviarChat').onclick=async()=>{const texto=$('chatTexto').value.trim();if(!texto)return;try{await api('/despacho/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto})});$('chatTexto').value='';await carregarChat();}catch(e){toast(e.message,'danger');}};
+
+async function init(){setupModulos();setupChatFlutuante();setupForm();renderPacientesMvp();renderEstoqueMvp();await carregarTiposColeta();await carregarDestinos();await renderLista();await carregarChat();}
+init();
+setInterval(renderLista,15000);
+setInterval(carregarChat,6000);
+</script>
+</body>
+</html>

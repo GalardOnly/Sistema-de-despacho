@@ -6,62 +6,68 @@
 <title>Administrador · Sistema de Despacho de Coletas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  :root{--bg:#f2f7f3;--surface:#fff;--surface-2:#f7fbf8;--border:#dce8df;--ink:#14211a;--muted:#5d6f64;--muted-2:#87998d;
-    --primary:#009962;--primary-dark:#007f52;--green-bg:#e2f7ef;--green-ink:#007f52;
-    --blue-bg:#e7f0ff;--blue-ink:#1c4e9c;--amber-bg:#fff2d9;--amber-ink:#9a5b00;--red-bg:#fdeceb;--red-ink:#a93226;--slate-bg:#eef1f4;--slate-ink:#4a5868;}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style nonce="{{ g.csp_nonce }}">
+  :root{--bg:#eef4f0;--surface:#fff;--surface-2:#f6faf7;--border:#dde8e0;--ink:#111d16;--muted:#5a6e61;--muted-2:#8a9e92;
+    --primary:#009962;--primary-dark:#007a4d;--header:#042416;--green-bg:#e2f7ef;--green-ink:#007a4d;
+    --blue-bg:#eff6ff;--blue-ink:#1d4f91;--amber-bg:#fff8e8;--amber-ink:#9a5b00;--red-bg:#fff0ef;--red-ink:#b42f25;--slate-bg:#f1f4f2;--slate-ink:#526158;}
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Inter,sans-serif;background:var(--bg);color:var(--ink)}
-  .mono{font-family:'IBM Plex Mono',monospace}
-  header{background:var(--primary);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
-  header h1{font-size:18px} header .sub{font-size:12px;color:rgba(255,255,255,.78);margin-top:3px}
-  header a{color:#fff;text-decoration:none;background:rgba(255,255,255,.12);border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:700}
-  .wrap{max-width:1360px;margin:0 auto;padding:24px 28px 70px}
-  .tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
-  .tabs button{border:1px solid var(--border);background:var(--surface);color:var(--muted);padding:10px 12px;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer}
-  .tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}
-  .pane{display:none}.pane.on{display:block}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
-  @media(max-width:920px){.grid2,.grid3{grid-template-columns:1fr}}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:0 8px 22px rgba(15,93,42,.04)}
-  .card h2{font-size:14.5px;margin-bottom:14px}.card h3{font-size:13px;margin-bottom:10px;color:var(--muted)}
-  .rowlist{display:flex;flex-direction:column;gap:9px;max-height:500px;overflow-y:auto}
-  .item{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:12px}
-  .item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.proto{font-weight:700;font-size:12.5px}
-  .route{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4}
-  .meta{font-size:11px;color:var(--muted);line-height:1.5}.meta strong{color:var(--ink)}
-  .tag,.status,.availability{font-size:9.8px;font-weight:800;letter-spacing:.25px;padding:4px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px}
-  .tag.rotina{background:var(--blue-bg);color:var(--blue-ink)}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink)}.tag.emergencia{background:var(--red-bg);color:var(--red-ink)}
-  .tag.vehicle{background:var(--green-bg);color:var(--green-ink)}.tag.tipo{background:var(--slate-bg);color:var(--slate-ink)}
-  .status.solicitado{background:var(--slate-bg);color:var(--slate-ink)}.status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink)}
-  .status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink)}.status.entregue{background:var(--green-bg);color:var(--green-ink)}.status.cancelado{background:var(--red-bg);color:var(--red-ink)}
-  .availability.available{background:var(--green-bg);color:var(--green-ink)}.availability.busy{background:var(--amber-bg);color:var(--amber-ink)}.availability.off{background:var(--red-bg);color:var(--red-ink)}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.chip{border:1px solid var(--border);background:#fff;color:var(--ink);font-size:11px;font-weight:700;padding:7px 10px;border-radius:8px;cursor:pointer}
-  .chip:hover{border-color:var(--primary);color:var(--primary)}.empty{text-align:center;color:var(--muted-2);font-size:12px;padding:22px;border:1px dashed var(--border);border-radius:10px}
-  .timeline{border-left:2px solid var(--border);margin:10px 0 2px 4px;padding-left:12px;display:grid;gap:6px}.event{font-size:10.7px;color:var(--muted);position:relative}.event:before{content:'';position:absolute;width:7px;height:7px;border-radius:50%;background:var(--primary);left:-16.5px;top:3px}.event strong{color:var(--ink)}
-  .map{height:220px;border-radius:10px;border:1px solid var(--border);margin-top:10px;z-index:1}.map-meta{font-size:10.5px;color:var(--muted);margin-top:6px}
-  .field{margin-bottom:11px}.field label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 11px;font:13px Inter;color:var(--ink)}
-  .primary{border:none;background:var(--primary);color:#fff;border-radius:9px;padding:11px 12px;font-weight:800;font-size:13px;cursor:pointer;width:100%}.primary:hover{background:var(--primary-dark)}
-  table{width:100%;border-collapse:collapse;font-size:12.5px}th{text-align:left;color:var(--muted-2);font-size:10px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);padding:7px 4px}td{border-bottom:1px solid var(--border);padding:8px 4px;vertical-align:top}
-  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.stat{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:12px}.stat b{display:block;font-size:20px}.stat span{font-size:11px;color:var(--muted)}
-  @media(max-width:820px){.stats{grid-template-columns:1fr 1fr}}
-  .chat-box{height:360px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}.msg{background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px}.msg.admin{border-left:4px solid var(--primary)}.msg .who{font-size:10px;font-weight:800;color:var(--muted);margin-bottom:4px}.msg p{font-size:12.5px;line-height:1.4}
-  .mini-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.mini-actions select{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font:12px Inter;color:var(--ink)}.mini-actions button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:800;cursor:pointer}.mini-actions button:hover{border-color:var(--primary);color:var(--primary)}.mini-actions button.danger{border-color:#efb6b1;color:var(--red-ink)}.mini-actions button.danger:hover{background:var(--red-bg)}
-  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:50;border-left:4px solid var(--primary)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  html{background:var(--bg)}body{min-height:100vh;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
+  button,input,select,textarea{font-family:inherit}.mono{font-family:'IBM Plex Mono',monospace}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid rgba(0,153,98,.24);outline-offset:2px}
+  header{position:sticky;top:0;z-index:90;background:var(--header);color:#fff;box-shadow:0 8px 24px rgba(3,31,18,.16)}
+  .header-inner{position:relative;width:100%;min-height:88px;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px}.header-copy{min-width:0}
+  .eyebrow{margin-bottom:4px;color:#00c46a;font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}header h1{font-size:18px;line-height:1.2}header .sub{margin-top:4px;color:rgba(255,255,255,.58);font-size:11px}
+  .brand-logo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}.brand-wordmark{color:#00c46a;font-size:24px;font-weight:800;letter-spacing:-.06em;line-height:1}.brand-wordmark span{color:#fff}
+  header a{color:rgba(255,255,255,.82);text-decoration:none;background:rgba(255,255,255,.1);border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;transition:.18s}header a:hover{color:#fff;background:rgba(255,255,255,.16)}
+  .wrap{max-width:1360px;margin:0 auto;padding:24px 20px 72px}.tabs{display:flex;gap:6px;margin-bottom:24px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 4px 14px rgba(15,93,42,.035);overflow-x:auto;scrollbar-width:thin}
+  .tabs button{flex:0 0 auto;border:1px solid transparent;background:transparent;color:var(--muted);padding:11px 14px;border-radius:11px;font-size:12px;font-weight:800;cursor:pointer;transition:.18s}.tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 3px 9px rgba(0,125,78,.16)}.tabs button:not(.on):hover{background:var(--bg);color:var(--header)}
+  .pane{display:none}.pane.on{display:block}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+  .card{padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 4px 16px rgba(15,93,42,.04)}.mt-18{margin-top:20px}.mt-12{margin-top:12px}.reports-refresh{max-width:220px;margin-bottom:16px}.sla-overdue{color:var(--red-ink);font-weight:800}
+  .card h2{margin-bottom:16px;font-size:15px}.card h3{margin-bottom:10px;color:var(--muted);font-size:13px}.section-note{margin:-8px 0 16px;color:var(--muted);font-size:11.5px;line-height:1.45}
+  .rowlist{display:flex;flex-direction:column;gap:10px;max-height:560px;overflow-y:auto;padding-right:3px;scrollbar-width:thin;scrollbar-color:#a9bbb0 transparent}#listHistorico{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-height:580px}
+  .item{padding:14px;background:var(--surface-2);border:1px solid var(--border);border-left:3px solid #b9c6be;border-radius:12px}.item.rotina{border-left-color:#65a0e8}.item.urgente{border-left-color:#e3a21b}.item.emergencia{border-left-color:#dc4a41}.item[data-chat-unit]{cursor:pointer;transition:.18s}.item[data-chat-unit]:hover{border-color:#9fd4b8;background:var(--green-bg)}
+  .item .top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}.proto{font-size:12.5px;font-weight:800}.route{margin-bottom:9px;color:var(--muted);font-size:12px;line-height:1.45}.meta{color:var(--muted);font-size:11px;line-height:1.55}.meta strong{color:var(--ink)}
+  .tag,.status,.availability{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border:1px solid transparent;border-radius:7px;font-size:9.8px;font-weight:800;letter-spacing:.2px}.status,.availability{border-radius:999px;text-transform:uppercase}
+  .tag.rotina{background:var(--blue-bg);color:var(--blue-ink);border-color:#d3e3fb}.tag.urgente{background:var(--amber-bg);color:var(--amber-ink);border-color:#f1dfb7}.tag.emergencia{background:var(--red-bg);color:var(--red-ink);border-color:#f4d0cd}.tag.vehicle{background:var(--green-bg);color:var(--green-ink);border-color:#cbead9}.tag.tipo{background:var(--slate-bg);color:var(--slate-ink);border-color:#e2e8e4}
+  .status.solicitado{background:var(--slate-bg);color:var(--slate-ink);border-color:#dfe6e1}.status.aguardando_entregador,.status.em_rota_retirada{background:var(--amber-bg);color:var(--amber-ink);border-color:#f1dfb7}.status.despachado,.status.coletado{background:var(--blue-bg);color:var(--blue-ink);border-color:#d3e3fb}.status.entregue{background:var(--green-bg);color:var(--green-ink);border-color:#cbead9}.status.cancelado{background:var(--red-bg);color:var(--red-ink);border-color:#f4d0cd}
+  .availability.available{background:var(--green-bg);color:var(--green-ink);border-color:#cbead9}.availability.busy{background:var(--amber-bg);color:var(--amber-ink);border-color:#f1dfb7}.availability.off{background:var(--red-bg);color:var(--red-ink);border-color:#f4d0cd}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}.chip{border:1px solid #9fd4b8;background:#fff;color:var(--green-ink);padding:7px 10px;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer}.chip:hover{background:var(--green-bg)}.empty{text-align:center;color:var(--muted-2);font-size:12px;padding:28px;border:1px dashed var(--border);border-radius:12px}
+  .timeline{display:grid;gap:6px;margin:11px 0 2px 4px;padding-left:13px;border-left:2px solid var(--border)}.event{position:relative;color:var(--muted);font-size:10.7px}.event:before{content:'';position:absolute;left:-17.5px;top:3px;width:7px;height:7px;border-radius:50%;background:var(--primary)}.event strong{color:var(--ink)}
+  .map{height:200px;margin-top:11px;border:1px solid var(--border);border-radius:12px;z-index:1}.map-meta{margin-top:6px;color:var(--muted);font-size:10.5px}
+  .field{margin-bottom:14px}.field label{display:block;margin-bottom:7px;color:var(--muted);font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}.field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:11px 13px;color:var(--ink);font-size:13px;transition:.18s}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,153,98,.1)}
+  .primary{width:100%;border:none;background:var(--primary);color:#fff;border-radius:11px;padding:11px 13px;font-size:13px;font-weight:800;cursor:pointer;transition:.18s}.primary:hover{background:var(--primary-dark)}
+  .table-shell{width:100%;overflow-x:auto}table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px}th{text-align:left;color:var(--muted-2);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);padding:9px 7px}td{border-bottom:1px solid var(--border);padding:10px 7px;vertical-align:top}tbody tr:hover{background:var(--surface-2)}
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.stat{padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px}.stat b{display:block;margin-bottom:2px;font-size:22px}.stat span{color:var(--muted);font-size:11px}
+  .driver-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.driver-summary-card{padding:15px;background:var(--surface-2);border:1px solid var(--border);border-radius:13px}.driver-summary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}.driver-summary-head strong{display:block;font-size:13px}.driver-summary-head small{display:block;margin-top:3px;color:var(--muted);font-size:10.5px}.driver-periods{display:grid;grid-template-columns:1fr 1fr;gap:8px}.driver-period{padding:10px;background:#fff;border:1px solid var(--border);border-radius:10px}.driver-period>span{display:block;color:var(--muted);font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.driver-period b{display:block;margin:3px 0 2px;font-size:22px}.driver-period small{display:block;color:var(--muted);font-size:9.8px;line-height:1.45}.driver-period .alert{color:var(--red-ink);font-weight:800}
+  .chat-box{height:320px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:11px;display:flex;flex-direction:column;gap:8px}.msg{padding:10px;background:#fff;border:1px solid var(--border);border-radius:11px}.msg.admin{background:var(--green-bg);border-color:#b6dfc5;border-left:3px solid var(--primary)}.msg .who{margin-bottom:4px;color:var(--muted-2);font-size:10px;font-weight:800}.msg p{font-size:12.5px;line-height:1.45}
+  .mini-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.mini-actions select{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 8px;color:var(--ink);font-size:12px}.mini-actions button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 9px;font-size:10.5px;font-weight:800;cursor:pointer}.mini-actions button:hover{border-color:var(--primary);color:var(--primary)}.mini-actions button.danger{border-color:#efb6b1;color:var(--red-ink)}.mini-actions button.danger:hover{background:var(--red-bg)}
+  .toast{position:fixed;left:50%;bottom:26px;z-index:130;transform:translateX(-50%) translateY(16px);background:#021a0e;color:#fff;padding:12px 18px;border-radius:10px;border-left:4px solid #00d47a;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.22s;box-shadow:0 16px 34px rgba(0,0,0,.18)}.toast.danger{border-left-color:#ef544a}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media(max-width:1040px){.grid3{grid-template-columns:1fr}.driver-summary-grid,#listHistorico{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.brand-logo{display:none}.header-copy{max-width:68%}}
+  @media(max-width:620px){.header-inner{min-height:82px;padding:13px 16px}.eyebrow{font-size:8px}header h1{font-size:15px}.wrap{padding:16px 12px 60px}.tabs{margin-bottom:16px}.card{padding:17px}.driver-summary-grid,#listHistorico{grid-template-columns:1fr}.driver-periods{grid-template-columns:1fr 1fr}.notification-panel{position:fixed;right:10px;top:82px;width:calc(100vw - 20px)}}
 </style>
 </head>
 <body>
 <header>
-  <div><h1>Sistema de Despacho de Coletas</h1><div class="sub">Administrador · {{ nome }}</div></div>
-  <div class="notification-actions">
-    {% include "despacho/_notificacoes.html" %}
-    <a href="/despacho/logout">Sair</a>
+  <div class="header-inner">
+    <div class="header-copy">
+      <div class="eyebrow">Unimed · Despacho</div>
+      <h1>Sistema de Despacho de Coletas</h1>
+      <div class="sub">Administrador · {{ nome }}</div>
+    </div>
+    <div class="brand-logo">
+      <span class="brand-wordmark" role="img" aria-label="Unimed">uni<span>med</span></span>
+    </div>
+    <div class="notification-actions">
+      {% include "despacho/_notificacoes.html" %}
+      <a href="/despacho/logout">Sair</a>
+    </div>
   </div>
 </header>
 
 <div class="wrap">
-  <div class="tabs">
+  <div class="tabs" aria-label="Módulos do administrador">
     <button class="on" data-tab="fila">Fila &amp; andamento</button>
     <button data-tab="relatorios">Relatórios</button>
     <button data-tab="chat">Chat interno</button>
@@ -77,19 +83,24 @@
       <div class="card"><h2>Em andamento</h2><div class="rowlist" id="listAndamento"></div></div>
       <div class="card"><h2>Disponíveis agora</h2><div class="rowlist" id="listDisponiveis"></div></div>
     </div>
-    <div class="card" style="margin-top:18px"><h2>Histórico de concluídos</h2><div class="rowlist" id="listHistorico"></div></div>
+    <div class="card mt-18"><h2>Histórico de concluídos</h2><div class="rowlist" id="listHistorico"></div></div>
   </section>
 
   <section class="pane" id="pane-relatorios">
     <div class="card"><h2>Resumo de corridas diárias</h2><div class="stats" id="resumoDiario"></div></div>
-    <div class="card" style="margin-top:18px">
+    <div class="card mt-18">
+      <h2>Corridas por entregador</h2>
+      <p class="section-note">Comparativo de hoje com o mês selecionado, incluindo entregadores sem corridas.</p>
+      <div class="driver-summary-grid" id="resumoEntregadores"></div>
+    </div>
+    <div class="card mt-18">
       <h2>Extrato mensal de inconformidades</h2>
       <div class="grid2">
         <div class="field"><label>Mês</label><select id="relMes"></select></div>
         <div class="field"><label>Ano</label><input id="relAno" type="number"></div>
       </div>
-      <button class="primary" id="btnRelatorios" style="max-width:220px;margin-bottom:12px">Atualizar relatórios</button>
-      <table><thead><tr><th>Série</th><th>Entregador</th><th>Solicitante</th><th>Excedido</th><th>Justificativa</th></tr></thead><tbody id="tabInconformidades"></tbody></table>
+      <button class="primary reports-refresh" id="btnRelatorios">Atualizar relatórios</button>
+      <div class="table-shell"><table><thead><tr><th>Série</th><th>Entregador</th><th>Solicitante</th><th>Excedido</th><th>Justificativa</th></tr></thead><tbody id="tabInconformidades"></tbody></table></div>
     </div>
   </section>
 
@@ -99,7 +110,7 @@
         <h2>Conversas por unidade</h2>
         <div class="field"><label>Unidade</label><select id="chatUnidade"></select></div>
         <div class="chat-box" id="chatMensagens"></div>
-        <div class="field" style="margin-top:12px"><label>Resposta do admin</label><textarea id="chatTexto" rows="3" placeholder="Digite a resposta..."></textarea></div>
+        <div class="field mt-12"><label>Resposta do admin</label><textarea id="chatTexto" rows="3" placeholder="Digite a resposta..."></textarea></div>
         <button class="primary" id="btnEnviarChat">Enviar mensagem</button>
       </div>
       <div class="card"><h2>Barra de mensagens</h2><div class="rowlist" id="chatResumo"></div></div>
@@ -109,7 +120,7 @@
   <section class="pane" id="pane-cad-unidades">
     <div class="grid2">
       <div class="card"><h2>Cadastro de Unidades</h2><div class="field"><label>Nome</label><input id="novaUnidadeNome" placeholder="Ex.: Unimed-Lar"></div><button class="primary" id="btnAddUnidade">Cadastrar unidade</button></div>
-      <div class="card"><h2>Unidades cadastradas</h2><table><thead><tr><th>Nome</th></tr></thead><tbody id="tabUnidades"></tbody></table></div>
+      <div class="card"><h2>Unidades cadastradas</h2><div class="table-shell"><table><thead><tr><th>Nome</th></tr></thead><tbody id="tabUnidades"></tbody></table></div></div>
     </div>
   </section>
 
@@ -119,12 +130,12 @@
         <h2>Cadastro de Usuários</h2>
         <div class="field"><label>Nome</label><input id="novoSolicitanteNome"></div>
         <div class="field"><label>Usuário (login)</label><input id="novoSolicitanteLogin"></div>
-        <div class="field"><label>Senha</label><input id="novoSolicitanteSenha" type="text"></div>
+        <div class="field"><label>Senha</label><input id="novoSolicitanteSenha" type="password" minlength="8" autocomplete="new-password"></div>
         <div class="field"><label>Código de Referência/ID Funcional</label><input id="novoSolicitanteCodigo"></div>
         <div class="field"><label>Unidade</label><select id="novoSolicitanteUnidade"></select></div>
         <button class="primary" id="btnAddSolicitante">Cadastrar solicitante</button>
       </div>
-      <div class="card"><h2>Solicitantes cadastrados</h2><table><thead><tr><th>Nome</th><th>Login</th><th>Código</th><th>Unidade</th></tr></thead><tbody id="tabSolicitantes"></tbody></table></div>
+      <div class="card"><h2>Solicitantes cadastrados</h2><div class="table-shell"><table><thead><tr><th>Nome</th><th>Login</th><th>Código</th><th>Unidade</th></tr></thead><tbody id="tabSolicitantes"></tbody></table></div></div>
     </div>
   </section>
 
@@ -134,12 +145,12 @@
         <h2>Cadastro de Entregadores</h2>
         <div class="field"><label>Nome</label><input id="novoEntregadorNome"></div>
         <div class="field"><label>Usuário (login)</label><input id="novoEntregadorLogin"></div>
-        <div class="field"><label>Senha</label><input id="novoEntregadorSenha" type="text"></div>
+        <div class="field"><label>Senha</label><input id="novoEntregadorSenha" type="password" minlength="8" autocomplete="new-password"></div>
         <div class="field"><label>Código de Referência/ID Funcional</label><input id="novoEntregadorCodigo"></div>
         <div class="field"><label>Tipo de veículo</label><select id="novoEntregadorVeiculo"><option value="moto">Moto</option><option value="carro">Carro</option></select></div>
         <button class="primary" id="btnAddEntregador">Cadastrar entregador</button>
       </div>
-      <div class="card"><h2>Entregadores cadastrados</h2><table><thead><tr><th>Nome</th><th>Login</th><th>Código</th><th>Veículo</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="tabEntregadores"></tbody></table></div>
+      <div class="card"><h2>Entregadores cadastrados</h2><div class="table-shell"><table><thead><tr><th>Nome</th><th>Login</th><th>Código</th><th>Veículo</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="tabEntregadores"></tbody></table></div></div>
     </div>
   </section>
 
@@ -148,20 +159,20 @@
       <div class="card">
         <h2>Alterar senhas</h2>
         <div class="field"><label>Login</label><select id="resetUsuario"></select></div>
-        <div class="field"><label>Nova senha</label><input id="resetSenha" type="text" autocomplete="off" placeholder="Informe uma senha provisória"></div>
+        <div class="field"><label>Nova senha</label><input id="resetSenha" type="password" minlength="8" autocomplete="new-password" placeholder="Informe uma senha provisória"></div>
         <button class="primary" id="btnResetSenha">Atualizar senha</button>
       </div>
       <div class="card">
         <h2>Logins ativos</h2>
-        <table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Referência</th></tr></thead><tbody id="tabLogins"></tbody></table>
+        <div class="table-shell"><table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Referência</th></tr></thead><tbody id="tabLogins"></tbody></table></div>
       </div>
     </div>
   </section>
 </div>
 
 <div class="toast" id="toast"><span id="toastTxt"></span></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
+<script nonce="{{ g.csp_nonce }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script nonce="{{ g.csp_nonce }}">
 const $ = id => document.getElementById(id);
 let unidades = [], usuarios = [], logins = [], pedidosAtuais = [];
 let mapas = new Map(), toastTimer, chatTimer;
@@ -170,15 +181,16 @@ const STATUS_MAPA = ['em_rota_retirada','em_rota','despachado','coletado'];
 const URG_LABELS = {rotina:'ROTINA (12 horas)', urgente:'URGENTE (40 min)', emergencia:'EMERGÊNCIA (15 min)'};
 
 function escapeHtml(v){return String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.style.borderLeftColor=type==='danger'?'#a93226':'#009962';el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
+function toast(msg,type){const el=$('toast');$('toastTxt').textContent=msg;el.classList.toggle('danger',type==='danger');el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400);}
 async function api(url,opt){const r=await fetch(url,window.despachoFetchOptions(opt));const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||('erro '+r.status));return data;}
+async function apiColecao(url,maxPaginas=100){const itens=[];let cursor=null;for(let pagina=0;pagina<maxPaginas;pagina++){const separador=url.includes('?')?'&':'?';const alvo=cursor?`${url}${separador}antes_id=${encodeURIComponent(cursor)}`:url;const r=await fetch(alvo,window.despachoFetchOptions());const dados=await r.json().catch(()=>({}));if(!r.ok)throw new Error(dados.error||('erro '+r.status));if(!Array.isArray(dados))throw new Error('resposta de coleção inválida');itens.push(...dados);cursor=r.headers.get('X-Next-Cursor');if(!cursor)return itens;}throw new Error('A consulta excedeu o limite de páginas permitido.');}
 const fmtHora = ts => ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
 function fmtDur(ms){let min=Math.ceil(Math.max(0,ms||0)/60000),h=Math.floor(min/60);min=min%60;return h&&min?`${h}h ${min}min`:h?`${h}h`:`${min}min`;}
 function normalizarVeiculo(v){return String(v || 'moto').trim().toLowerCase();}
 function veiculoLabel(v){return normalizarVeiculo(v)==='carro'?'Carro':'Moto';}
 function veiculoOptions(v){const atual=normalizarVeiculo(v);return ['moto','carro'].map(x=>`<option value="${x}" ${atual===x?'selected':''}>${veiculoLabel(x)}</option>`).join('');}
 function labelStatus(s){return {solicitado:'SOLICITADO',aguardando_entregador:'AGUARDANDO ENTREGADOR',em_rota_retirada:'A CAMINHO DA RETIRADA',em_rota:'A CAMINHO DA RETIRADA',despachado:'DESPACHADO / EM ENTREGA',coletado:'DESPACHADO / EM ENTREGA',entregue:'ENTREGUE',cancelado:'CANCELADO'}[s]||s;}
-function slaLinha(p){return p.sla?.atrasado?`<span style="color:var(--red-ink);font-weight:800">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
+function slaLinha(p){return p.sla?.atrasado?`<span class="sla-overdue">SLA excedido: ${fmtDur(p.sla.excedido_ms)}</span>`:`Tempo: ${fmtDur(p.sla?.decorrido_ms)} / ${fmtDur(p.sla?.limite_ms)}`;}
 function operadorLinha(p){return p.operador_nome?`<div class="meta">Solicitado por: <strong>${escapeHtml(p.operador_nome)}</strong></div>`:'<div class="meta">Solicitado por: <strong>cadastro antigo não informado</strong></div>';}
 function resumoMensagensLabel(n){return Number(n)===1?'1 mensagem recebida':`${n} mensagens recebidas`;}
 
@@ -192,14 +204,16 @@ document.querySelectorAll('.tabs button').forEach(btn=>btn.addEventListener('cli
 }));
 
 async function carregarUnidades(){
-  unidades = await api('/despacho/api/unidades');
+  unidades = await apiColecao('/despacho/api/unidades');
+  unidades.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const opts = unidades.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)}</option>`).join('');
   $('novoSolicitanteUnidade').innerHTML = opts;
   $('tabUnidades').innerHTML = unidades.map(u=>`<tr><td>${escapeHtml(u.nome)}</td></tr>`).join('') || '<tr><td>Nenhuma unidade.</td></tr>';
 }
 
 async function carregarUsuarios(){
-  usuarios = await api('/despacho/api/usuarios');
+  usuarios = await apiColecao('/despacho/api/usuarios');
+  usuarios.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const solicitantes = usuarios.filter(u=>u.papel==='solicitante');
   const entregadores = usuarios.filter(u=>u.papel==='entregador');
   $('tabSolicitantes').innerHTML = solicitantes.map(u=>`<tr><td>${escapeHtml(u.nome)}</td><td class="mono">${escapeHtml(u.username)}</td><td>${escapeHtml(u.codigo_ref||'—')}</td><td>${escapeHtml(u.unidade_nome||'—')}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum solicitante.</td></tr>';
@@ -231,7 +245,8 @@ function detalheLogin(u){
   return '';
 }
 async function carregarLogins(){
-  logins = await api('/despacho/api/logins');
+  logins = await apiColecao('/despacho/api/logins');
+  logins.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const atual = $('resetUsuario').value;
   $('resetUsuario').innerHTML = logins.map(u=>`<option value="${u.id}">${escapeHtml(u.nome)} · ${escapeHtml(u.username)} · ${perfilLabel(u.papel)}${detalheLogin(u)}</option>`).join('');
   if(atual) $('resetUsuario').value = atual;
@@ -248,10 +263,10 @@ function linhaTempo(p){
   return `<div class="timeline">${eventos.map(e=>`<div class="event"><strong>${e[0]}</strong> · ${fmtHora(e[1])}</div>`).join('')}</div>`;
 }
 function cardPedido(p, mapa=false){
-  return `<div class="item">
+  return `<div class="item ${p.urgencia}">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="status ${p.status}">${labelStatus(p.status)}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)} · <span class="tag vehicle">${veiculoLabel(p.tipo_veiculo)}</span> ${p.entregador?' · '+escapeHtml(p.entregador):''}</div>
-    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span> <span class="tag tipo">${escapeHtml(p.tipo)}</span></div>
+    <div><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span>${p.urgencia_mista?'<span class="tag urgente">PRIORIDADES MISTAS</span>':''} <span class="tag tipo">${escapeHtml(p.tipo)}</span></div>
     ${operadorLinha(p)}
     <div class="meta">${slaLinha(p)}</div>
     ${linhaTempo(p)}
@@ -259,9 +274,10 @@ function cardPedido(p, mapa=false){
   </div>`;
 }
 function cardFila(p){
-  return `<div class="item">
+  return `<div class="item ${p.urgencia}">
     <div class="top"><span class="proto mono">${escapeHtml(p.protocolo)}</span><span class="tag ${p.urgencia}">${URG_LABELS[p.urgencia]}</span></div>
     <div class="route">${escapeHtml(p.origem)} para ${escapeHtml(p.destino)} · ${escapeHtml(p.tipo)} · Veículo: <strong>${veiculoLabel(p.tipo_veiculo)}</strong></div>
+    ${p.urgencia_mista?'<div><span class="tag urgente">PRIORIDADES MISTAS</span></div>':''}
     ${operadorLinha(p)}
     <div class="meta">${slaLinha(p)}</div>${linhaTempo(p)}<div class="chips" id="chips-${p.id}"></div>
   </div>`;
@@ -341,7 +357,7 @@ $('btnAddEntregador').onclick=async()=>{try{await cadastrarUsuario({nome:$('novo
 $('btnResetSenha').onclick=async()=>{
   const id = parseInt($('resetUsuario').value);
   const senha = $('resetSenha').value.trim();
-  if(!id || senha.length < 4){toast('Informe o login e uma senha com ao menos 4 caracteres','danger');return;}
+  if(!id || senha.length < 8){toast('Informe o login e uma senha com ao menos 8 caracteres','danger');return;}
   try{
     await api(`/despacho/api/usuarios/${id}/senha`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha})});
     $('resetSenha').value='';
@@ -353,10 +369,48 @@ function setupRelatorios(){
   const hoje=new Date(); $('relAno').value=hoje.getFullYear();
   $('relMes').innerHTML=Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i===hoje.getMonth()?'selected':''}>${String(i+1).padStart(2,'0')}</option>`).join('');
 }
+function renderResumoEntregadores(diario,mensal){
+  const porIdDiario = new Map((diario.entregadores||[]).map(item=>[item.id,item]));
+  const porIdMensal = new Map((mensal.entregadores||[]).map(item=>[item.id,item]));
+  const ids = [...new Set([...porIdMensal.keys(),...porIdDiario.keys()])];
+  if(!ids.length){
+    $('resumoEntregadores').innerHTML='<div class="empty">Nenhum entregador ativo cadastrado.</div>';
+    return;
+  }
+  const referenciaMensal = new Date(mensal.periodo.ano,mensal.periodo.mes-1,1)
+    .toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  $('resumoEntregadores').innerHTML=ids.map(id=>{
+    const dia=porIdDiario.get(id)||{total:0,entregues:0,em_andamento:0};
+    const mes=porIdMensal.get(id)||{total:0,entregues:0,em_andamento:0,canceladas:0,fora_sla:0};
+    const entregador=porIdMensal.get(id)||porIdDiario.get(id);
+    return `<article class="driver-summary-card">
+      <div class="driver-summary-head">
+        <div><strong>${escapeHtml(entregador.nome)}</strong><small>Código: ${escapeHtml(entregador.codigo_ref||'—')}</small></div>
+        <span class="tag vehicle">${veiculoLabel(entregador.tipo_veiculo)}</span>
+      </div>
+      <div class="driver-periods">
+        <div class="driver-period">
+          <span>Hoje</span><b>${dia.total}</b>
+          <small>${dia.entregues} entregues · ${dia.em_andamento} em andamento</small>
+        </div>
+        <div class="driver-period">
+          <span>${escapeHtml(referenciaMensal)}</span><b>${mes.total}</b>
+          <small>${mes.entregues} entregues · ${mes.em_andamento} em andamento<br>${mes.canceladas} canceladas · <span class="${mes.fora_sla?'alert':''}">${mes.fora_sla} fora do SLA</span></small>
+        </div>
+      </div>
+    </article>`;
+  }).join('');
+}
 async function carregarRelatorios(){
-  const resumo=await api('/despacho/api/relatorios/resumo-diario');
+  const mes=$('relMes').value, ano=$('relAno').value;
+  const [resumo,rows,diario,mensal]=await Promise.all([
+    api('/despacho/api/relatorios/resumo-diario'),
+    apiColecao(`/despacho/api/relatorios/inconformidades?mes=${mes}&ano=${ano}`),
+    api('/despacho/api/relatorios/entregadores?periodo=dia'),
+    api(`/despacho/api/relatorios/entregadores?periodo=mes&mes=${mes}&ano=${ano}`)
+  ]);
   $('resumoDiario').innerHTML=[['total','Total'],['entregues','Entregues'],['em_andamento','Em andamento'],['cancelados','Cancelados'],['fora_sla','Fora do SLA']].map(([k,l])=>`<div class="stat"><b>${resumo[k]}</b><span>${l}</span></div>`).join('');
-  const rows=await api(`/despacho/api/relatorios/inconformidades?mes=${$('relMes').value}&ano=${$('relAno').value}`);
+  renderResumoEntregadores(diario,mensal);
   $('tabInconformidades').innerHTML=rows.map(r=>`<tr><td class="mono">${escapeHtml(r.protocolo)}</td><td>${escapeHtml(r.entregador||'—')}</td><td>${escapeHtml(r.solicitante||'—')}</td><td>${escapeHtml(r.tempo_excedido)}</td><td>${escapeHtml(r.justificativa_atraso||'Sem justificativa')}</td></tr>`).join('')||'<tr><td colspan="5">Nenhuma inconformidade no mês.</td></tr>';
 }
 $('btnRelatorios').onclick=carregarRelatorios;
@@ -364,7 +418,8 @@ $('btnRelatorios').onclick=carregarRelatorios;
 async function carregarChat(){
   await carregarUsuarios();
   const unidadeId=$('chatUnidade').value;
-  const resumo=await api('/despacho/api/chat/resumo');
+  const resumo=await apiColecao('/despacho/api/chat/resumo');
+  resumo.sort((a,b)=>(b.ultimo_ts||0)-(a.ultimo_ts||0));
   $('chatResumo').innerHTML=resumo.map(r=>`<div class="item" data-chat-unit="${r.unidade_id}"><div class="top"><span class="proto">${escapeHtml(r.unidade||'Unidade')}</span><span class="tag tipo">${resumoMensagensLabel(r.recebidas)}</span></div><div class="meta">Total na conversa: <strong>${r.total}</strong> · Última movimentação: ${fmtHora(r.ultimo_ts)}</div></div>`).join('')||'<div class="empty">Sem mensagens ainda.</div>';
   if(!unidadeId){$('chatMensagens').innerHTML='<div class="empty">Cadastre ou selecione uma unidade.</div>';return;}
   const msgs=await api(`/despacho/api/chat?unidade_id=${unidadeId}`);

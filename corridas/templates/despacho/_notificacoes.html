@@ -1,4 +1,4 @@
-<style>
+<style nonce="{{ g.csp_nonce }}">
   .notification-actions{display:flex;align-items:center;gap:8px}
   .notification-area{position:relative;display:inline-flex;align-items:center}
   .notification-button{position:relative;border:none;background:rgba(255,255,255,.14);color:#fff;border-radius:10px;padding:8px 11px;font-size:15px;line-height:1;cursor:pointer}
@@ -41,7 +41,7 @@
   <span id="notifPopText"></span>
 </div>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 window.DESPACHO_CSRF_TOKEN = '{{ csrf_token() }}';
 window.despachoFetchOptions = function(options) {
   const finalOptions = Object.assign({}, options || {});
