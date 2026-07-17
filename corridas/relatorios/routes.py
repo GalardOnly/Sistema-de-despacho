@@ -23,6 +23,16 @@ from ..pedidos.services import (
 )
 
 
+def _periodo_mensal_requisitado():
+    hoje = datetime.now(TZ)
+    ano = _inteiro_positivo(request.args.get("ano") or hoje.year)
+    mes = _inteiro_positivo(request.args.get("mes") or hoje.month)
+    if not ano or not 2000 <= ano <= 2100 or not mes or not 1 <= mes <= 12:
+        return None
+    inicio, fim = _range_mes_ms(ano, mes)
+    return ano, mes, inicio, fim
+
+
 @despacho_bp.route("/api/relatorios/resumo-diario")
 @login_required_desp("admin")
 def api_relatorio_resumo_diario():
@@ -53,12 +63,10 @@ def api_relatorio_resumo_diario():
 @login_required_desp("admin")
 def api_relatorio_inconformidades():
     con = get_db_desp()
-    hoje = datetime.now(TZ)
-    ano = _inteiro_positivo(request.args.get("ano") or hoje.year)
-    mes = _inteiro_positivo(request.args.get("mes") or hoje.month)
-    if not ano or not 2000 <= ano <= 2100 or not mes or not 1 <= mes <= 12:
+    periodo = _periodo_mensal_requisitado()
+    if not periodo:
         return jsonify(error="mês ou ano inválido"), 400
-    inicio, fim = _range_mes_ms(ano, mes)
+    _, _, inicio, fim = periodo
     limite = _limite_consulta(LIMITE_RELATORIO_RETORNO, LIMITE_RELATORIO_RETORNO)
     antes_id = _parametro_consulta_positivo("antes_id")
     cursor = antes_id or 0
@@ -90,3 +98,70 @@ def api_relatorio_inconformidades():
         }
 
     return _resposta_paginada(rows, limite, serializar)
+
+
+@despacho_bp.route("/api/relatorios/entregadores")
+@login_required_desp("admin")
+def api_relatorio_entregadores():
+    tipo_periodo = (request.args.get("periodo") or "mes").strip().casefold()
+    if tipo_periodo == "dia":
+        hoje = datetime.now(TZ)
+        inicio, fim = _range_dia_ms()
+        periodo_resposta = {
+            "tipo": "dia",
+            "data": hoje.date().isoformat(),
+        }
+    elif tipo_periodo == "mes":
+        periodo = _periodo_mensal_requisitado()
+        if not periodo:
+            return jsonify(error="mês ou ano inválido"), 400
+        ano, mes, inicio, fim = periodo
+        periodo_resposta = {"tipo": "mes", "ano": ano, "mes": mes}
+    else:
+        return jsonify(error="período inválido"), 400
+    con = get_db_desp()
+    rows = con.execute(
+        """
+        SELECT
+            u.id,
+            u.nome,
+            u.codigo_ref,
+            u.tipo_veiculo,
+            COUNT(p.id) AS total,
+            SUM(CASE WHEN p.status='entregue' THEN 1 ELSE 0 END) AS entregues,
+            SUM(CASE WHEN p.status IN (
+                'aguardando_entregador','em_rota_retirada','em_rota','despachado','coletado'
+            ) THEN 1 ELSE 0 END) AS em_andamento,
+            SUM(CASE WHEN p.status='cancelado' THEN 1 ELSE 0 END) AS canceladas,
+            SUM(CASE WHEN p.status='entregue'
+                AND p.ts_entregue IS NOT NULL
+                AND (p.ts_entregue - p.ts_solicitado)
+                    > (COALESCE(p.sla_limite_min, 720) * 60000)
+                THEN 1 ELSE 0 END) AS fora_sla
+        FROM usuarios u
+        LEFT JOIN pedidos p
+            ON p.entregador_id=u.id
+            AND p.ts_solicitado BETWEEN ? AND ?
+        WHERE u.papel='entregador' AND u.ativo=1
+        GROUP BY u.id, u.nome, u.codigo_ref, u.tipo_veiculo
+        ORDER BY LOWER(u.nome), u.id
+        """,
+        (inicio, fim),
+    ).fetchall()
+    return jsonify(
+        periodo=periodo_resposta,
+        entregadores=[
+            {
+                "id": row["id"],
+                "nome": row["nome"],
+                "codigo_ref": row["codigo_ref"],
+                "tipo_veiculo": row["tipo_veiculo"],
+                "total": int(row["total"] or 0),
+                "entregues": int(row["entregues"] or 0),
+                "em_andamento": int(row["em_andamento"] or 0),
+                "canceladas": int(row["canceladas"] or 0),
+                "fora_sla": int(row["fora_sla"] or 0),
+            }
+            for row in rows
+        ],
+    )

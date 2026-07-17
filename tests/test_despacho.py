@@ -942,6 +942,34 @@ class DispatchApiTests(unittest.TestCase):
         self.assertEqual(1, resumo["em_andamento"])
         self.assertEqual(0, resumo["fora_sla"])
 
+    def test_driver_report_lists_registered_drivers_and_counts_orders(self):
+        pedido = self.create_order()
+        self.dispatch_order(pedido["id"])
+
+        self.login("admin")
+        resposta_mes = self.client.get(
+            "/despacho/api/relatorios/entregadores?periodo=mes"
+        )
+        resposta_dia = self.client.get(
+            "/despacho/api/relatorios/entregadores?periodo=dia"
+        )
+        self.assertEqual(200, resposta_mes.status_code, resposta_mes.get_json())
+        self.assertEqual(200, resposta_dia.status_code, resposta_dia.get_json())
+        entregadores = {
+            row["id"]: row for row in resposta_mes.get_json()["entregadores"]
+        }
+        entregadores_dia = {
+            row["id"]: row for row in resposta_dia.get_json()["entregadores"]
+        }
+
+        self.assertIn(self.entregador_id, entregadores)
+        self.assertIn(self.outro_entregador_id, entregadores)
+        self.assertEqual(1, entregadores[self.entregador_id]["total"])
+        self.assertEqual(1, entregadores[self.entregador_id]["em_andamento"])
+        self.assertEqual(0, entregadores[self.outro_entregador_id]["total"])
+        self.assertEqual(1, entregadores_dia[self.entregador_id]["total"])
+        self.assertEqual(0, entregadores_dia[self.outro_entregador_id]["total"])
+
     def test_order_list_is_bounded_and_supports_cursor(self):
         pedidos = [self.create_order(operador_nome=f"Operador {i}") for i in range(3)]
 
@@ -1272,6 +1300,10 @@ class DispatchApiTests(unittest.TestCase):
             "data-driver-delete",
             "/api/usuarios/",
             "Disponíveis agora",
+            "Corridas por entregador",
+            "resumoEntregadores",
+            "/api/relatorios/entregadores?periodo=dia",
+            "/api/relatorios/entregadores?periodo=mes",
             "leaflet",
             "15000",
         ):
@@ -1328,6 +1360,8 @@ class DispatchApiTests(unittest.TestCase):
             "estoqueTabela",
             "Itens críticos",
             "MVP visual",
+            "closest('button[data-urg]')",
+            "closest('button[data-vehicle]')",
         ):
             self.assertIn(expected, html)
         self.assertNotIn('id="selOperador"', html)
